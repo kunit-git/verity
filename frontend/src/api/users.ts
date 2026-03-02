@@ -1,0 +1,34 @@
+import api from "./client";
+import type { User } from "../types";
+
+export async function getUsers(): Promise<User[]> {
+  const { data } = await api.get<User[]>("/auth/users/");
+  return data;
+}
+
+export async function updateUserRole(
+  id: number,
+  role: User["role"]
+): Promise<User> {
+  const { data } = await api.patch<User>(`/auth/users/${id}/`, { role });
+  return data;
+}
+
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  await api.post("/auth/me/password/", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+}
+
+export async function adminChangePassword(
+  userId: number,
+  newPassword: string
+): Promise<void> {
+  await api.post(`/auth/users/${userId}/password/`, {
+    new_password: newPassword,
+  });
+}

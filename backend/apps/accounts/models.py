@@ -11,7 +11,7 @@ class User(AbstractUser):
     role = models.CharField(
         max_length=20,
         choices=Role.choices,
-        default=Role.EDITOR,
+        default=Role.VIEWER,
     )
 
     class Meta:

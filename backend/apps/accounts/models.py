@@ -16,3 +16,21 @@ class User(AbstractUser):
 
     class Meta:
         db_table = "accounts_user"
+
+
+class SiteSettings(models.Model):
+    """Singleton model for site-wide configuration."""
+
+    registration_enabled = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "accounts_sitesettings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

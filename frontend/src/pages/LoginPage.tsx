@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
+import { getSiteSettings } from "../api/users";
 import { Compass } from "lucide-react";
 
 export default function LoginPage() {
@@ -10,6 +12,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const { data: siteSettings } = useQuery({
+    queryKey: ["site-settings"],
+    queryFn: getSiteSettings,
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,12 +84,14 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-sm text-gray-600">
-          Don&apos;t have an account?{" "}
-          <Link to="/register" className="text-blue-600 hover:text-blue-700">
-            Register
-          </Link>
-        </p>
+        {siteSettings?.registration_enabled && (
+          <p className="mt-4 text-center text-sm text-gray-600">
+            Don&apos;t have an account?{" "}
+            <Link to="/register" className="text-blue-600 hover:text-blue-700">
+              Register
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );

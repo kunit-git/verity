@@ -1,11 +1,18 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
+import { getSiteSettings } from "../api/users";
 import { Compass } from "lucide-react";
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  const { data: siteSettings, isLoading: settingsLoading } = useQuery({
+    queryKey: ["site-settings"],
+    queryFn: getSiteSettings,
+  });
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +33,29 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!settingsLoading && siteSettings?.registration_enabled === false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-sm text-center">
+          <Compass className="mx-auto h-10 w-10 text-blue-600" />
+          <h1 className="mt-3 text-2xl font-bold text-gray-900">
+            Registration disabled
+          </h1>
+          <p className="mt-2 text-sm text-gray-500">
+            New account registration is currently not available. Please contact
+            an administrator.
+          </p>
+          <Link
+            to="/login"
+            className="mt-4 inline-block text-sm text-blue-600 hover:text-blue-700"
+          >
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

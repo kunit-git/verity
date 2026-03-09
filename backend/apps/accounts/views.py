@@ -3,6 +3,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .models import SiteSettings
 from .permissions import IsAdmin
 from .serializers import (
     RegisterSerializer,
@@ -10,14 +11,40 @@ from .serializers import (
     UserManagementSerializer,
     ChangeOwnPasswordSerializer,
     AdminChangePasswordSerializer,
+    SiteSettingsSerializer,
 )
 
 User = get_user_model()
 
 
+class SiteSettingsView(APIView):
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [permissions.AllowAny()]
+        return [IsAdmin()]
+
+    def get(self, request):
+        return Response(SiteSettingsSerializer(SiteSettings.get()).data)
+
+    def patch(self, request):
+        settings = SiteSettings.get()
+        serializer = SiteSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        if not SiteSettings.get().registration_enabled:
+            return Response(
+                {"detail": "Registration is currently disabled."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().create(request, *args, **kwargs)
 
 
 class MeView(generics.RetrieveUpdateAPIView):

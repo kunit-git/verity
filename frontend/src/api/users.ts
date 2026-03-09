@@ -32,3 +32,19 @@ export async function adminChangePassword(
     new_password: newPassword,
   });
 }
+
+export interface SiteSettings {
+  registration_enabled: boolean;
+}
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  const { data } = await api.get<SiteSettings>("/auth/settings/");
+  return data;
+}
+
+export async function updateSiteSettings(
+  patch: Partial<SiteSettings>
+): Promise<SiteSettings> {
+  const { data } = await api.patch<SiteSettings>("/auth/settings/", patch);
+  return data;
+}

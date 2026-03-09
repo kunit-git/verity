@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, KeyRound } from "lucide-react";
-import { getUsers, updateUserRole } from "../api/users";
+import { getUsers, updateUserRole, getSiteSettings, updateSiteSettings } from "../api/users";
 import { useAuth } from "../auth/AuthContext";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import type { User } from "../types";
@@ -27,6 +27,18 @@ export default function UserManagementPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
+  const { data: siteSettings } = useQuery({
+    queryKey: ["site-settings"],
+    queryFn: getSiteSettings,
+  });
+
+  const settingsMutation = useMutation({
+    mutationFn: (patch: { registration_enabled: boolean }) =>
+      updateSiteSettings(patch),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["site-settings"] }),
+  });
+
   if (isError) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -47,7 +59,35 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">User registration</p>
+          <p className="text-xs text-gray-500">
+            Allow new users to create accounts via the registration page.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={siteSettings?.registration_enabled ?? true}
+          onClick={() =>
+            settingsMutation.mutate({
+              registration_enabled: !(siteSettings?.registration_enabled ?? true),
+            })
+          }
+          disabled={settingsMutation.isPending}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
+            siteSettings?.registration_enabled ? "bg-blue-600" : "bg-gray-300"
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              siteSettings?.registration_enabled ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+
+      <div className="mt-4">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />

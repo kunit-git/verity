@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from .models import SiteSettings
+
 User = get_user_model()
 
 
@@ -47,3 +49,9 @@ class ChangeOwnPasswordSerializer(serializers.Serializer):
 
 class AdminChangePasswordSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, min_length=8)
+
+
+class SiteSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SiteSettings
+        fields = ["registration_enabled"]

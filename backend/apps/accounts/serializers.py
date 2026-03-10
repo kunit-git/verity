@@ -54,4 +54,4 @@ class AdminChangePasswordSerializer(serializers.Serializer):
 class SiteSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteSettings
-        fields = ["registration_enabled"]
+        fields = ["registration_enabled", "mailbox_limit"]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, KeyRound } from "lucide-react";
 import { getUsers, updateUserRole, getSiteSettings, updateSiteSettings } from "../api/users";
@@ -7,6 +7,69 @@ import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import type { User } from "../types";
 
 const ROLES: User["role"][] = ["viewer", "editor", "admin"];
+
+function MailboxLimitControl({
+  value,
+  onSave,
+  isPending,
+}: {
+  value: number;
+  onSave: (v: number) => void;
+  isPending: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleSave() {
+    const v = parseInt(inputRef.current?.value ?? "0", 10);
+    if (!isNaN(v) && v >= 0) {
+      onSave(v);
+    }
+    setEditing(false);
+  }
+
+  return (
+    <div className="mt-2 flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <div>
+        <p className="text-sm font-medium text-gray-900">Mailbox document limit</p>
+        <p className="text-xs text-gray-500">
+          Maximum documents per user. Set to 0 for unlimited.
+        </p>
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            type="number"
+            min={0}
+            defaultValue={value}
+            className="w-20 rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+          />
+          <button
+            onClick={handleSave}
+            disabled={isPending}
+            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => setEditing(false)}
+            className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          {value === 0 ? "Unlimited" : value}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function UserManagementPage() {
   const { user: me } = useAuth();
@@ -33,7 +96,7 @@ export default function UserManagementPage() {
   });
 
   const settingsMutation = useMutation({
-    mutationFn: (patch: { registration_enabled: boolean }) =>
+    mutationFn: (patch: Partial<{ registration_enabled: boolean; mailbox_limit: number }>) =>
       updateSiteSettings(patch),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["site-settings"] }),
@@ -86,6 +149,12 @@ export default function UserManagementPage() {
           />
         </button>
       </div>
+
+      <MailboxLimitControl
+        value={siteSettings?.mailbox_limit ?? 0}
+        onSave={(v) => settingsMutation.mutate({ mailbox_limit: v })}
+        isPending={settingsMutation.isPending}
+      />
 
       <div className="mt-4">
         {isLoading ? (

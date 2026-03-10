@@ -35,6 +35,7 @@ export async function adminChangePassword(
 
 export interface SiteSettings {
   registration_enabled: boolean;
+  mailbox_limit: number;
 }
 
 export async function getSiteSettings(): Promise<SiteSettings> {

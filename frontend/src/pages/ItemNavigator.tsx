@@ -141,9 +141,6 @@ export default function ItemNavigator() {
         <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
           {item.item_type_name}
         </span>
-        <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-          v{item.current_version}
-        </span>
         <h1 className="flex-1 truncate text-lg font-semibold text-gray-900">
           {item.title}
         </h1>
@@ -244,6 +241,12 @@ export default function ItemNavigator() {
                 </span>
                 <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
                   {item.status.replace("_", " ")}
+                </span>
+                <span className="text-sm font-medium text-gray-500">
+                  Version:
+                </span>                
+                <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                  v{item.current_version}
                 </span>
               </div>
 

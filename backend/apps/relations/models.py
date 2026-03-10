@@ -109,6 +109,12 @@ class ItemRelation(models.Model):
                 )
 
     def save(self, *args, **kwargs):
+        # Auto-set versions on creation so suspect-link tracking always works
+        if self._state.adding:
+            if self.source_version is None and self.source_id:
+                self.source_version = self.source.current_version
+            if self.target_version is None and self.target_id:
+                self.target_version = self.target.current_version
         self.full_clean()
         super().save(*args, **kwargs)
 

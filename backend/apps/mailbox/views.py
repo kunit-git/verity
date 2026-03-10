@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.models import SiteSettings
 from apps.items.models import Item
 
 from .document_generator import generate_markdown
@@ -30,6 +31,15 @@ class MailboxViewSet(viewsets.ModelViewSet):
                 {"detail": "item_id is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        limit = SiteSettings.get().mailbox_limit
+        if limit > 0:
+            count = MailboxArtifact.objects.filter(user=request.user).count()
+            if count >= limit:
+                return Response(
+                    {"detail": f"Mailbox limit of {limit} document(s) reached. Delete some documents to generate new ones."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         try:
             item = Item.objects.get(pk=item_id)

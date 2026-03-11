@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -64,6 +64,8 @@ export default function ItemNavigator() {
   const [showHistory, setShowHistory] = useState(false);
   const [comparingRef, setComparingRef] = useState<NavigationRef | null>(null);
   const [comparingSide, setComparingSide] = useState<"left" | "right">("left");
+  const [leftWidth, setLeftWidth] = useState(224);
+  const [rightWidth, setRightWidth] = useState(224);
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
@@ -227,10 +229,12 @@ export default function ItemNavigator() {
             setComparingSide("left");
           }}
           side="left"
+          width={leftWidth}
         />
+        <ResizeHandle onResize={setLeftWidth} side="left" />
 
         {/* Center content */}
-        <div className="flex flex-1 flex-col overflow-y-auto">
+        <div className="flex flex-1 flex-col overflow-y-auto" style={{ minWidth: 200 }}>
           {/* Item detail */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="space-y-6">
@@ -308,6 +312,7 @@ export default function ItemNavigator() {
 
         </div>
 
+        <ResizeHandle onResize={setRightWidth} side="right" />
         {/* Right panel - outgoing relations */}
         <NavPanel
           title="Outgoing"
@@ -319,6 +324,7 @@ export default function ItemNavigator() {
             setComparingSide("right");
           }}
           side="right"
+          width={rightWidth}
         />
       </div>
 
@@ -354,6 +360,65 @@ export default function ItemNavigator() {
   );
 }
 
+function ResizeHandle({
+  onResize,
+  side,
+}: {
+  onResize: (width: number) => void;
+  side: "left" | "right";
+}) {
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+  const handleRef = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragging.current = true;
+      startX.current = e.clientX;
+      // Read the sibling panel's current width
+      const sibling =
+        side === "left"
+          ? handleRef.current?.previousElementSibling
+          : handleRef.current?.nextElementSibling;
+      startWidth.current = sibling?.getBoundingClientRect().width ?? 224;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!dragging.current) return;
+        const delta = ev.clientX - startX.current;
+        const newWidth = Math.max(
+          120,
+          Math.min(600, startWidth.current + (side === "left" ? delta : -delta))
+        );
+        onResize(newWidth);
+      };
+
+      const onMouseUp = () => {
+        dragging.current = false;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [onResize, side]
+  );
+
+  return (
+    <div
+      ref={handleRef}
+      onMouseDown={onMouseDown}
+      className="w-1 flex-shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"
+    />
+  );
+}
+
 function NavPanel({
   title,
   icon,
@@ -361,6 +426,7 @@ function NavPanel({
   onNavigate,
   onCompare,
   side,
+  width,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -368,11 +434,13 @@ function NavPanel({
   onNavigate: (ref: NavigationRef) => void;
   onCompare: (ref: NavigationRef) => void;
   side: "left" | "right";
+  width: number;
 }) {
   const suspectCount = items.filter((r) => r.is_suspect).length;
   return (
     <div
-      className={`w-56 flex-shrink-0 overflow-y-auto border-gray-200 bg-white ${
+      style={{ width }}
+      className={`flex-shrink-0 overflow-y-auto border-gray-200 bg-white ${
         side === "left" ? "border-r" : "border-l"
       }`}
     >

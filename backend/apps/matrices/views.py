@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,9 +15,12 @@ class MatrixViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Matrix.objects.select_related("created_by").prefetch_related(
-            "columns__seed_item_type",
-            "columns__seed_container",
-            "columns__relation_type",
+            Prefetch(
+                "columns",
+                queryset=MatrixColumn.objects.select_related(
+                    "seed_item_type", "seed_container", "relation_type"
+                ),
+            ),
         ).all()
 
     def get_serializer_class(self):
@@ -28,7 +32,7 @@ class MatrixViewSet(viewsets.ModelViewSet):
     def data(self, request, pk=None):
         matrix = self.get_object()
         columns = list(
-            matrix.columns.select_related(
+            MatrixColumn.objects.filter(matrix=matrix).select_related(
                 "seed_item_type", "seed_container", "relation_type"
             ).order_by("position")
         )

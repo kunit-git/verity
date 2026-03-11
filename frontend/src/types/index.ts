@@ -91,6 +91,7 @@ export interface ItemRelation {
   target_title: string;
   target_type_slug: string;
   target_version: number | null;
+  version_pinned: boolean;
   created_by: number;
   created_at: string;
 }
@@ -109,6 +110,7 @@ export interface NavigationRef {
   is_suspect?: boolean;
   other_changed?: boolean;
   self_changed?: boolean;
+  is_version_pinned?: boolean;
 }
 
 export interface NavigationContext {

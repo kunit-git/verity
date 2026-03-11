@@ -4,15 +4,17 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.core.models import SoftDeleteModel
 
-class RelationType(models.Model):
+
+class RelationType(SoftDeleteModel):
     class Kind(models.TextChoices):
         COMPOSITION = "composition", "Composition"
         TRACE = "trace", "Trace"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=20, choices=Kind.choices)
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
     forward_label = models.CharField(max_length=100)
     reverse_label = models.CharField(max_length=100)
     description = models.TextField(blank=True)
@@ -42,21 +44,28 @@ class RelationType(models.Model):
     class Meta:
         db_table = "relations_relation_type"
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_relation_type_name",
+            ),
+        ]
 
     def __str__(self):
         return self.name
 
 
-class ItemRelation(models.Model):
+class ItemRelation(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     relation_type = models.ForeignKey(
         RelationType, on_delete=models.PROTECT, related_name="relations"
     )
     source = models.ForeignKey(
-        "items.Item", on_delete=models.CASCADE, related_name="outgoing_relations"
+        "items.Item", on_delete=models.PROTECT, related_name="outgoing_relations"
     )
     target = models.ForeignKey(
-        "items.Item", on_delete=models.CASCADE, related_name="incoming_relations"
+        "items.Item", on_delete=models.PROTECT, related_name="incoming_relations"
     )
     source_version = models.PositiveIntegerField(
         null=True, blank=True,
@@ -66,6 +75,10 @@ class ItemRelation(models.Model):
         null=True, blank=True,
         help_text="Pin target to this version number. NULL = latest.",
     )
+    version_pinned = models.BooleanField(
+        default=False,
+        help_text="User explicitly reviewed and chose to keep older version reference.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT
     )
@@ -74,8 +87,14 @@ class ItemRelation(models.Model):
 
     class Meta:
         db_table = "relations_item_relation"
-        unique_together = [("relation_type", "source", "target")]
         ordering = ["position", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["relation_type", "source", "target"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_item_relation",
+            ),
+        ]
 
     def clean(self):
         from apps.items.models import ItemVersion

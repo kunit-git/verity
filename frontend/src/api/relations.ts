@@ -52,8 +52,18 @@ export async function deleteRelation(id: string) {
   await api.delete(`/relations/${id}/`);
 }
 
-export async function confirmRelation(id: string) {
-  const { data } = await api.post<ItemRelation>(`/relations/${id}/confirm/`);
+export async function confirmRelation(
+  id: string,
+  payload?: {
+    source_version?: number;
+    target_version?: number;
+    version_pinned?: boolean;
+  }
+) {
+  const { data } = await api.post<ItemRelation>(
+    `/relations/${id}/confirm/`,
+    payload
+  );
   return data;
 }
 

@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 
 from rest_framework import serializers
 
@@ -164,7 +165,7 @@ class ItemSerializer(serializers.ModelSerializer):
             # Snapshot current state before applying changes
             current_cfv = {
                 cfv.field_definition.slug: cfv.value
-                for cfv in instance.custom_field_values.select_related("field_definition")
+                for cfv in CustomFieldValue.objects.filter(item=instance).select_related("field_definition")
             }
             # Lock the item row to prevent concurrent version races
             Item.objects.select_for_update().filter(pk=instance.pk).first()
@@ -186,6 +187,14 @@ class ItemSerializer(serializers.ModelSerializer):
                 setattr(instance, attr, value)
             instance.save()
 
+            # Reset version_pinned on all relations involving this item
+            # so pinned relations become suspect again for new unreviewed changes
+            from apps.relations.models import ItemRelation
+            ItemRelation.objects.filter(
+                Q(source=instance) | Q(target=instance),
+                version_pinned=True,
+            ).update(version_pinned=False)
+
             if custom_fields_data is not None:
                 field_defs = self._validate_custom_fields(
                     instance.item_type, custom_fields_data
@@ -202,7 +211,7 @@ class ItemSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Replace custom_fields dict with actual values from DB
-        cfv_qs = instance.custom_field_values.select_related("field_definition")
+        cfv_qs = CustomFieldValue.objects.filter(item=instance).select_related("field_definition")
         data["custom_fields"] = {
             cfv.field_definition.slug: cfv.value for cfv in cfv_qs
         }

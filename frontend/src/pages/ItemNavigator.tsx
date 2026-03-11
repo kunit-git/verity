@@ -15,11 +15,13 @@ import {
   FileText,
   Loader2,
   AlertTriangle,
-  CheckCircle,
+  GitCompareArrows,
+  Pin,
 } from "lucide-react";
 import { getItem, getItems, deleteItem, getItemTypes, getItemVersions } from "../api/items";
-import { getNavigation, getRelationTypes, createRelation, confirmRelation } from "../api/relations";
+import { getNavigation, getRelationTypes, createRelation } from "../api/relations";
 import { generateDocument } from "../api/mailbox";
+import CompareDialog from "../components/CompareDialog";
 import type { NavigationRef, RelationType, ItemVersion } from "../types";
 import { useState } from "react";
 
@@ -60,6 +62,8 @@ export default function ItemNavigator() {
   const [copied, setCopied] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [comparingRef, setComparingRef] = useState<NavigationRef | null>(null);
+  const [comparingSide, setComparingSide] = useState<"left" | "right">("left");
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
@@ -218,13 +222,9 @@ export default function ItemNavigator() {
           icon={<ChevronLeft className="h-4 w-4" />}
           items={nav?.left || []}
           onNavigate={(ref) => navigate(`/items/${ref.id}`)}
-          onConfirm={(ref) => {
-            if (ref.relation_id) {
-              confirmRelation(ref.relation_id).then(() => {
-                queryClient.invalidateQueries({ queryKey: ["navigation", id] });
-                queryClient.invalidateQueries({ queryKey: ["tree"] });
-              });
-            }
+          onCompare={(ref) => {
+            setComparingRef(ref);
+            setComparingSide("left");
           }}
           side="left"
         />
@@ -314,13 +314,9 @@ export default function ItemNavigator() {
           icon={<ChevronRight className="h-4 w-4" />}
           items={nav?.right || []}
           onNavigate={(ref) => navigate(`/items/${ref.id}`)}
-          onConfirm={(ref) => {
-            if (ref.relation_id) {
-              confirmRelation(ref.relation_id).then(() => {
-                queryClient.invalidateQueries({ queryKey: ["navigation", id] });
-                queryClient.invalidateQueries({ queryKey: ["tree"] });
-              });
-            }
+          onCompare={(ref) => {
+            setComparingRef(ref);
+            setComparingSide("right");
           }}
           side="right"
         />
@@ -339,6 +335,21 @@ export default function ItemNavigator() {
           }}
         />
       )}
+
+      {comparingRef?.relation_id && (
+        <CompareDialog
+          relationId={comparingRef.relation_id}
+          currentItemId={id!}
+          ref_={comparingRef}
+          side={comparingSide}
+          onClose={() => setComparingRef(null)}
+          onConfirmed={() => {
+            setComparingRef(null);
+            queryClient.invalidateQueries({ queryKey: ["navigation", id] });
+            queryClient.invalidateQueries({ queryKey: ["tree"] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -348,14 +359,14 @@ function NavPanel({
   icon,
   items,
   onNavigate,
-  onConfirm,
+  onCompare,
   side,
 }: {
   title: string;
   icon: React.ReactNode;
   items: NavigationRef[];
   onNavigate: (ref: NavigationRef) => void;
-  onConfirm: (ref: NavigationRef) => void;
+  onCompare: (ref: NavigationRef) => void;
   side: "left" | "right";
 }) {
   const suspectCount = items.filter((r) => r.is_suspect).length;
@@ -394,6 +405,9 @@ function NavPanel({
                   {ref.is_suspect && (
                     <AlertTriangle className="mr-1 inline h-3.5 w-3.5 text-amber-500" />
                   )}
+                  {ref.is_version_pinned && !ref.is_suspect && (
+                    <Pin className="mr-1 inline h-3.5 w-3.5 text-blue-400" />
+                  )}
                   {ref.title}
                 </p>
                 <p className="text-xs text-gray-400">
@@ -408,18 +422,23 @@ function NavPanel({
                         : `This item changed since link confirmed (v${ref.self_pinned_version} → v${ref.self_current_version})`}
                   </p>
                 )}
+                {ref.is_version_pinned && !ref.is_suspect && (
+                  <p className="mt-0.5 text-[10px] text-blue-500">
+                    Pinned to v{ref.pinned_version}
+                  </p>
+                )}
               </button>
               {ref.is_suspect && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onConfirm(ref);
+                    onCompare(ref);
                   }}
                   className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-200"
-                  title="Confirm this link is still valid"
+                  title="Compare versions and resolve suspect link"
                 >
-                  <CheckCircle className="h-3 w-3" />
-                  Confirm
+                  <GitCompareArrows className="h-3 w-3" />
+                  Compare
                 </button>
               )}
             </div>

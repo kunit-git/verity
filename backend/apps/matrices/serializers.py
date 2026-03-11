@@ -73,7 +73,7 @@ class MatrixColumnSerializer(serializers.ModelSerializer):
 
 
 class MatrixSerializer(serializers.ModelSerializer):
-    columns = MatrixColumnSerializer(many=True, read_only=True)
+    columns = serializers.SerializerMethodField()
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True
     )
@@ -91,6 +91,10 @@ class MatrixSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+
+    def get_columns(self, obj):
+        columns = MatrixColumn.objects.filter(matrix=obj)
+        return MatrixColumnSerializer(columns, many=True).data
 
 
 class MatrixWriteSerializer(serializers.ModelSerializer):

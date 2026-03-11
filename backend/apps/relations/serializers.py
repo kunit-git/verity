@@ -66,10 +66,11 @@ class ItemRelationSerializer(serializers.ModelSerializer):
             "target_title",
             "target_type_slug",
             "target_version",
+            "version_pinned",
             "created_by",
             "created_at",
         ]
-        read_only_fields = ["id", "source_version", "target_version", "created_by", "created_at"]
+        read_only_fields = ["id", "source_version", "target_version", "version_pinned", "created_by", "created_at"]
 
     def validate(self, data):
         rt = data.get("relation_type")

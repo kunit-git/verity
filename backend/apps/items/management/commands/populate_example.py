@@ -133,13 +133,18 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         self.stdout.write("Wiping existing data...")
-        Matrix.objects.all().delete()
-        ItemRelation.objects.all().delete()
-        CustomFieldValue.objects.all().delete()
-        Item.objects.all().delete()
-        CustomFieldDefinition.objects.all().delete()
-        ItemType.objects.all().delete()
-        RelationType.objects.filter(is_builtin=False).delete()
+        MatrixColumn.all_objects.all().hard_delete()
+        Matrix.all_objects.all().hard_delete()
+        ItemRelation.all_objects.all().hard_delete()
+        CustomFieldValue.all_objects.all().hard_delete()
+        from apps.items.models import ItemVersion
+        ItemVersion.all_objects.all().hard_delete()
+        Item.all_objects.all().hard_delete()
+        CustomFieldDefinition.all_objects.all().hard_delete()
+        ItemType.all_objects.all().hard_delete()
+        RelationType.all_objects.filter(is_builtin=False).hard_delete()
+        from apps.mailbox.models import MailboxArtifact
+        MailboxArtifact.all_objects.all().hard_delete()
         User.objects.all().delete()
         self.stdout.write("  Done.\n")
 

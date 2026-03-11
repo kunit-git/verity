@@ -2,12 +2,15 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+from apps.core.models import SoftDeleteModel
 
 
-class ItemType(models.Model):
+class ItemType(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=100)
     description = models.TextField(blank=True)
     icon = models.CharField(max_length=50, blank=True)
     is_active = models.BooleanField(default=True)
@@ -16,12 +19,39 @@ class ItemType(models.Model):
     class Meta:
         db_table = "items_item_type"
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_item_type_name",
+            ),
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_item_type_slug",
+            ),
+        ]
 
     def __str__(self):
         return self.name
 
+    def _soft_cascade(self):
+        now = timezone.now()
+        field_ids = list(
+            CustomFieldDefinition.all_objects.filter(
+                item_type=self, is_deleted=False
+            ).values_list("id", flat=True)
+        )
+        CustomFieldDefinition.all_objects.filter(
+            item_type=self, is_deleted=False
+        ).update(is_deleted=True, deleted_at=now)
+        if field_ids:
+            CustomFieldValue.all_objects.filter(
+                field_definition_id__in=field_ids, is_deleted=False
+            ).update(is_deleted=True, deleted_at=now)
 
-class CustomFieldDefinition(models.Model):
+
+class CustomFieldDefinition(SoftDeleteModel):
     class FieldKind(models.TextChoices):
         TEXT = "text"
         INTEGER = "integer"
@@ -32,7 +62,7 @@ class CustomFieldDefinition(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item_type = models.ForeignKey(
-        ItemType, on_delete=models.CASCADE, related_name="custom_fields"
+        ItemType, on_delete=models.PROTECT, related_name="custom_fields"
     )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=100)
@@ -43,14 +73,25 @@ class CustomFieldDefinition(models.Model):
 
     class Meta:
         db_table = "items_custom_field_def"
-        unique_together = [("item_type", "slug")]
         ordering = ["display_order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item_type", "slug"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_custom_field_def_type_slug",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.item_type.name}.{self.name}"
 
+    def _soft_cascade(self):
+        CustomFieldValue.all_objects.filter(
+            field_definition=self, is_deleted=False
+        ).update(is_deleted=True, deleted_at=timezone.now())
 
-class Item(models.Model):
+
+class Item(SoftDeleteModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         ACTIVE = "active", "Active"
@@ -83,10 +124,25 @@ class Item(models.Model):
     def __str__(self):
         return f"[{self.item_type.slug}] {self.title}"
 
+    def _soft_cascade(self):
+        from apps.relations.models import ItemRelation
 
-class ItemVersion(models.Model):
+        now = timezone.now()
+        ItemVersion.all_objects.filter(item=self, is_deleted=False).update(
+            is_deleted=True, deleted_at=now
+        )
+        CustomFieldValue.all_objects.filter(item=self, is_deleted=False).update(
+            is_deleted=True, deleted_at=now
+        )
+        ItemRelation.all_objects.filter(
+            models.Q(source=self) | models.Q(target=self),
+            is_deleted=False,
+        ).update(is_deleted=True, deleted_at=now)
+
+
+class ItemVersion(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="versions")
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="versions")
     version_number = models.PositiveIntegerField()
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True)
@@ -102,23 +158,35 @@ class ItemVersion(models.Model):
 
     class Meta:
         db_table = "items_item_version"
-        unique_together = [("item", "version_number")]
         ordering = ["-version_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "version_number"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_item_version_number",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.item} v{self.version_number}"
 
 
-class CustomFieldValue(models.Model):
+class CustomFieldValue(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item = models.ForeignKey(
-        Item, on_delete=models.CASCADE, related_name="custom_field_values"
+        Item, on_delete=models.PROTECT, related_name="custom_field_values"
     )
     field_definition = models.ForeignKey(
-        CustomFieldDefinition, on_delete=models.CASCADE
+        CustomFieldDefinition, on_delete=models.PROTECT
     )
     value = models.JSONField()
 
     class Meta:
         db_table = "items_custom_field_value"
-        unique_together = [("item", "field_definition")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "field_definition"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_custom_field_value_item_def",
+            ),
+        ]

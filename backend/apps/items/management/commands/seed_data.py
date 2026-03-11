@@ -8,13 +8,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Remove deprecated types
-        removed, _ = RelationType.objects.filter(name="is_aggregation_of").delete()
+        removed, _ = RelationType.all_objects.filter(name="is_aggregation_of").hard_delete()
         if removed:
             self.stdout.write("  Removed: deprecated RelationType 'is_aggregation_of'")
 
         from apps.items.models import ItemType
 
-        removed, _ = ItemType.objects.filter(slug="container").delete()
+        removed, _ = ItemType.all_objects.filter(slug="container").hard_delete()
         if removed:
             self.stdout.write("  Removed: deprecated ItemType 'Container'")
 

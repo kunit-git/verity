@@ -2,9 +2,12 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+from apps.core.models import SoftDeleteModel
 
 
-class Matrix(models.Model):
+class Matrix(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
@@ -23,15 +26,20 @@ class Matrix(models.Model):
     def __str__(self):
         return self.name
 
+    def _soft_cascade(self):
+        MatrixColumn.all_objects.filter(matrix=self, is_deleted=False).update(
+            is_deleted=True, deleted_at=timezone.now()
+        )
 
-class MatrixColumn(models.Model):
+
+class MatrixColumn(SoftDeleteModel):
     class Direction(models.TextChoices):
         OUTGOING = "outgoing", "Outgoing"
         INCOMING = "incoming", "Incoming"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     matrix = models.ForeignKey(
-        Matrix, on_delete=models.CASCADE, related_name="columns"
+        Matrix, on_delete=models.PROTECT, related_name="columns"
     )
     position = models.PositiveIntegerField()
     label = models.CharField(max_length=200)
@@ -69,8 +77,14 @@ class MatrixColumn(models.Model):
 
     class Meta:
         db_table = "matrices_matrix_column"
-        unique_together = [("matrix", "position")]
         ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["matrix", "position"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_matrix_column_position",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.matrix.name} col[{self.position}]: {self.label}"

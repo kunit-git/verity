@@ -1,4 +1,4 @@
-from django.db.models import BooleanField, Count, Exists, F, Q, Subquery, OuterRef, IntegerField, Value
+from django.db.models import BooleanField, Count, Exists, F, Prefetch, Q, Subquery, OuterRef, IntegerField, Value
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, status
@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.relations.models import ItemRelation, RelationType
-from .models import CustomFieldDefinition, Item, ItemType, ItemVersion
+from .models import CustomFieldDefinition, CustomFieldValue, Item, ItemType, ItemVersion
 from .serializers import (
     CustomFieldDefinitionSerializer,
     ItemListSerializer,
@@ -26,8 +26,10 @@ class ItemTypeViewSet(viewsets.ModelViewSet):
         return (
             ItemType.objects
             .filter(is_active=True)
-            .prefetch_related("custom_fields")
-            .annotate(item_count=Count("items"))
+            .prefetch_related(
+                Prefetch("custom_fields", queryset=CustomFieldDefinition.objects.all())
+            )
+            .annotate(item_count=Count("items", filter=Q(items__is_deleted=False)))
         )
 
     def get_serializer_class(self):
@@ -37,7 +39,7 @@ class ItemTypeViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         item_type = self.get_object()
-        if item_type.items.exists():
+        if Item.objects.filter(item_type=item_type).exists():
             return Response(
                 {"detail": "Cannot delete an item type that has existing items."},
                 status=status.HTTP_409_CONFLICT,
@@ -104,8 +106,10 @@ class ItemViewSet(viewsets.ModelViewSet):
         current_version — covers both "this item changed" and "other item changed".
         """
         non_comp = ~Q(relation_type__kind=RelationType.Kind.COMPOSITION)
+        not_pinned = Q(version_pinned=False)
         suspect_as_source = ItemRelation.objects.filter(
             non_comp,
+            not_pinned,
             source_id=OuterRef("pk"),
         ).filter(
             Q(source_version__lt=OuterRef("current_version"))
@@ -113,6 +117,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         )
         suspect_as_target = ItemRelation.objects.filter(
             non_comp,
+            not_pinned,
             target_id=OuterRef("pk"),
         ).filter(
             Q(target_version__lt=OuterRef("current_version"))
@@ -134,28 +139,36 @@ class ItemViewSet(viewsets.ModelViewSet):
                 SELECT ir.target_id AS id
                 FROM relations_item_relation ir
                 JOIN relations_relation_type rt ON ir.relation_type_id = rt.id
-                WHERE ir.source_id = "items_item"."id" AND rt.kind = 'composition'
+                WHERE ir.source_id = "items_item"."id"
+                  AND rt.kind = 'composition'
+                  AND ir.is_deleted = false
+                  AND rt.is_deleted = false
                 UNION ALL
                 SELECT ir.target_id
                 FROM relations_item_relation ir
                 JOIN relations_relation_type rt ON ir.relation_type_id = rt.id
                 JOIN desc_tree d ON ir.source_id = d.id
                 WHERE rt.kind = 'composition'
+                  AND ir.is_deleted = false
+                  AND rt.is_deleted = false
             )
             SELECT 1 FROM desc_tree d
             WHERE EXISTS (
                 SELECT 1 FROM relations_item_relation r
                 JOIN relations_relation_type rt ON r.relation_type_id = rt.id
                 WHERE rt.kind != 'composition'
+                  AND r.is_deleted = false
+                  AND rt.is_deleted = false
+                  AND r.version_pinned = false
                 AND (
                     (r.source_id = d.id AND (
-                        r.source_version < (SELECT current_version FROM items_item WHERE id = d.id)
-                        OR r.target_version < (SELECT current_version FROM items_item WHERE id = r.target_id)
+                        r.source_version < (SELECT current_version FROM items_item WHERE id = d.id AND is_deleted = false)
+                        OR r.target_version < (SELECT current_version FROM items_item WHERE id = r.target_id AND is_deleted = false)
                     ))
                     OR
                     (r.target_id = d.id AND (
-                        r.target_version < (SELECT current_version FROM items_item WHERE id = d.id)
-                        OR r.source_version < (SELECT current_version FROM items_item WHERE id = r.source_id)
+                        r.target_version < (SELECT current_version FROM items_item WHERE id = d.id AND is_deleted = false)
+                        OR r.source_version < (SELECT current_version FROM items_item WHERE id = r.source_id AND is_deleted = false)
                     ))
                 )
             )
@@ -259,12 +272,46 @@ class ItemViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def versions(self, request, pk=None):
         item = self.get_object()
-        qs = item.versions.select_related("created_by").all()
+        qs = ItemVersion.objects.filter(item=item).select_related("created_by")
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = ItemVersionSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = ItemVersionSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path=r"versions/(?P<version_number>\d+)")
+    def version_detail(self, request, pk=None, version_number=None):
+        """Return data for a specific version of an item."""
+        item = self.get_object()
+        version_number = int(version_number)
+
+        if version_number < 1 or version_number > item.current_version:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        if version_number == item.current_version:
+            # Synthesize from live item state
+            cfv_qs = CustomFieldValue.objects.filter(item=item).select_related("field_definition")
+            return Response({
+                "version_number": item.current_version,
+                "title": item.title,
+                "description": item.description,
+                "status": item.status,
+                "custom_fields_snapshot": {
+                    cfv.field_definition.slug: cfv.value for cfv in cfv_qs
+                },
+                "created_by": item.created_by_id,
+                "created_by_username": item.created_by.username,
+                "created_at": item.updated_at,
+                "change_summary": "",
+            })
+
+        version = ItemVersion.objects.filter(
+            item=item, version_number=version_number
+        ).select_related("created_by").first()
+        if not version:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ItemVersionSerializer(version)
         return Response(serializer.data)
 
     @action(detail=True, methods=["get"])

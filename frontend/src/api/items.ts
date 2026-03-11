@@ -134,3 +134,10 @@ export async function getItemVersions(itemId: string) {
   );
   return data.results;
 }
+
+export async function getItemVersion(itemId: string, versionNumber: number) {
+  const { data } = await api.get<ItemVersion>(
+    `/items/${itemId}/versions/${versionNumber}/`
+  );
+  return data;
+}

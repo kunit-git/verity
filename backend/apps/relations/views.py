@@ -42,11 +42,37 @@ class ItemRelationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
-        """Re-confirm a relation by updating both versions to current."""
+        """Confirm a relation, optionally pinning to specific versions.
+
+        Body (all optional):
+            source_version: int  — defaults to current
+            target_version: int  — defaults to current
+            version_pinned: bool — defaults to false
+        """
         relation = self.get_object()
-        relation.source_version = relation.source.current_version
-        relation.target_version = relation.target.current_version
-        relation.save(update_fields=["source_version", "target_version"])
+        source_ver = request.data.get("source_version", relation.source.current_version)
+        target_ver = request.data.get("target_version", relation.target.current_version)
+        pinned = request.data.get("version_pinned", False)
+
+        # Validate versions exist
+        from apps.items.models import ItemVersion
+        if source_ver != relation.source.current_version:
+            if not ItemVersion.objects.filter(item=relation.source, version_number=source_ver).exists():
+                return Response(
+                    {"source_version": f"Version {source_ver} does not exist."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        if target_ver != relation.target.current_version:
+            if not ItemVersion.objects.filter(item=relation.target, version_number=target_ver).exists():
+                return Response(
+                    {"target_version": f"Version {target_ver} does not exist."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        relation.source_version = source_ver
+        relation.target_version = target_ver
+        relation.version_pinned = pinned
+        relation.save(update_fields=["source_version", "target_version", "version_pinned"])
         serializer = self.get_serializer(relation)
         return Response(serializer.data)
 
@@ -57,12 +83,13 @@ class ItemNavigationView(viewsets.ViewSet):
     permission_classes = [ReadOnlyOrEditor]
 
     @staticmethod
-    def _resolve_ref(item, pinned_version=None, self_version=None, self_current_version=None):
+    def _resolve_ref(item, pinned_version=None, self_version=None, self_current_version=None, version_pinned=False):
         """Build a navigation ref, resolving title from a pinned version if set.
 
         A relation is suspect if:
         - The other item changed: pinned_version < item.current_version
         - The current item changed: self_version < self_current_version
+        - AND the relation is not explicitly pinned by the user
         """
         other_suspect = pinned_version is not None and pinned_version < item.current_version
         self_suspect = (
@@ -70,6 +97,7 @@ class ItemNavigationView(viewsets.ViewSet):
             and self_current_version is not None
             and self_version < self_current_version
         )
+        is_suspect = (other_suspect or self_suspect) and not version_pinned
         ref = {
             "id": str(item.id),
             "title": item.title,
@@ -78,9 +106,10 @@ class ItemNavigationView(viewsets.ViewSet):
             "current_version": item.current_version,
             "self_pinned_version": self_version,
             "self_current_version": self_current_version,
-            "is_suspect": other_suspect or self_suspect,
+            "is_suspect": is_suspect,
             "other_changed": other_suspect,
             "self_changed": self_suspect,
+            "is_version_pinned": version_pinned,
         }
         if pinned_version is not None:
             version = ItemVersion.objects.filter(
@@ -146,6 +175,7 @@ class ItemNavigationView(viewsets.ViewSet):
                     r.source, r.source_version,
                     self_version=r.target_version,
                     self_current_version=item.current_version,
+                    version_pinned=r.version_pinned,
                 ),
                 "relation_id": str(r.id),
                 "relation_type": r.relation_type.name,
@@ -166,6 +196,7 @@ class ItemNavigationView(viewsets.ViewSet):
                     r.target, r.target_version,
                     self_version=r.source_version,
                     self_current_version=item.current_version,
+                    version_pinned=r.version_pinned,
                 ),
                 "relation_id": str(r.id),
                 "relation_type": r.relation_type.name,

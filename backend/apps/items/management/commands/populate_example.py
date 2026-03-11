@@ -6,7 +6,7 @@ System example organised around document deliverables — plans, specifications,
 FMEA analyses, risk assessments, and verification & validation reports.
 
 Item types used:
-  Project, Plan, Specification, Report, Analysis,
+  Project, Plan, Specification, Report, Analysis, Information,
   Requirement, Risk, Test Case, Failure Mode, Failure Cause
 Relation types:
   Built-in:  is_composed_of, traces_to
@@ -181,6 +181,7 @@ class Command(BaseCommand):
             ("Threat", "threat", "A cybersecurity threat scenario describing an attack vector or threat agent.", "shield-alert"),
             ("Vulnerability", "vulnerability", "A weakness in the system that could be exploited by a threat.", "shield-off"),
             ("Mitigation", "mitigation", "A security or safety control measure that reduces risk.", "shield-check"),
+            ("Information", "information", "A textual section within a document, such as Purpose, Scope, or Definitions.", "text"),
         ]
         self._types = {}
         for name, slug, desc, icon in item_types:
@@ -396,6 +397,134 @@ class Command(BaseCommand):
 
         self._compose(programme, dev_plan,
                        verification_plan, validation_plan)
+
+        # ==============================================================
+        # PLAN SECTIONS  (Information items)
+        # ==============================================================
+
+        # -- Development Plan sections --
+        dev_purpose = self._item(
+            "information",
+            "Purpose",
+            "This document defines the overall development lifecycle, "
+            "milestones, roles, and processes for the AV-2000 autonomous "
+            "vehicle project. It serves as the primary reference for all "
+            "engineering teams involved in design, implementation, and "
+            "integration activities.",
+        )
+        dev_scope = self._item(
+            "information",
+            "Scope",
+            "This plan covers the full vehicle development from concept "
+            "through to production release, including hardware design, "
+            "embedded software, sensor integration, and system-level "
+            "verification. It does not cover manufacturing processes or "
+            "post-production servicing.",
+        )
+        dev_refs = self._item(
+            "information",
+            "Normative References",
+            "ISO 26262:2018 (all parts) — Road vehicles – Functional safety\n"
+            "ISO 21448:2022 — Road vehicles – Safety of the intended functionality (SOTIF)\n"
+            "ISO/SAE 21434:2021 — Road vehicles – Cybersecurity engineering\n"
+            "IEC 61508:2010 — Functional safety of electrical/electronic/programmable electronic safety-related systems",
+        )
+        dev_lifecycle = self._item(
+            "information",
+            "Development Lifecycle",
+            "The project follows a V-model development lifecycle with iterative "
+            "prototyping at each stage. Requirements are captured and baselined "
+            "at the left side of the V; verification and validation activities "
+            "on the right side confirm that each requirement is satisfied. "
+            "Agile sprints are used within each V-model phase for software "
+            "development activities.",
+        )
+        self._compose(dev_plan, dev_purpose, dev_scope, dev_refs, dev_lifecycle)
+
+        # -- Risk Management Plan sections --
+        rmp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes the risk management process, acceptability "
+            "criteria, analysis methods, and review cadence for identifying, "
+            "evaluating, and controlling risks throughout the AV-2000 project.",
+        )
+        rmp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers safety risks (ISO 26262 hazard analysis, FMEA, FTA), "
+            "SOTIF-related risks (reasonably foreseeable misuse, performance "
+            "limitations), and cybersecurity risks (ISO/SAE 21434 threat "
+            "analysis). Financial and schedule risks are managed separately "
+            "under the project management plan.",
+        )
+        rmp_criteria = self._item(
+            "information",
+            "Risk Acceptability Criteria",
+            "Risks are classified using a 5×4 severity–likelihood matrix. "
+            "Risks rated Critical or High require documented mitigation before "
+            "the design is approved. Medium risks must be reviewed and either "
+            "mitigated or accepted with rationale. Low risks are recorded but "
+            "do not require active mitigation.",
+        )
+        self._compose(risk_mgmt_plan, rmp_purpose, rmp_scope, rmp_criteria)
+
+        # -- Verification Plan sections --
+        vp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan defines the verification strategy, test levels, test "
+            "environments, tools, and pass/fail criteria for demonstrating "
+            "that all system and subsystem requirements are correctly "
+            "implemented.",
+        )
+        vp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers unit testing, integration testing, system-level testing, "
+            "and hardware-in-the-loop (HIL) simulation for all AV-2000 "
+            "subsystems. Regression testing and continuous integration "
+            "requirements are included. Validation activities (real-world "
+            "driving scenarios) are covered separately in the Validation Plan.",
+        )
+        vp_methods = self._item(
+            "information",
+            "Verification Methods",
+            "Four verification methods are employed per ISO 26262-8:\n"
+            "• Test — execution of software or hardware against defined stimuli\n"
+            "• Analysis — formal or semi-formal reasoning including code review and static analysis\n"
+            "• Inspection — visual or manual examination of work products\n"
+            "• Demonstration — functional walk-through in a representative environment",
+        )
+        self._compose(verification_plan, vp_purpose, vp_scope, vp_methods)
+
+        # -- Validation Plan sections --
+        valp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan describes the validation approach for confirming that "
+            "the AV-2000 system satisfies its intended use and user needs "
+            "under real-world operating conditions.",
+        )
+        valp_scope = self._item(
+            "information",
+            "Scope",
+            "Validation covers closed-course testing, public-road pilot "
+            "programmes, and simulation-based scenario testing. It addresses "
+            "both nominal driving conditions and edge cases identified through "
+            "SOTIF analysis. Regulatory submission evidence requirements are "
+            "included.",
+        )
+        valp_acceptance = self._item(
+            "information",
+            "Acceptance Criteria",
+            "The system must complete a minimum of 100,000 km of autonomous "
+            "driving without a safety-critical disengagement. Scenario-based "
+            "testing must cover all SOTIF-identified triggering conditions with "
+            "a pass rate ≥ 98 %. Human-factors evaluations must demonstrate "
+            "safe takeover within 4 seconds for all tested transition scenarios.",
+        )
+        self._compose(validation_plan, valp_purpose, valp_scope, valp_acceptance)
 
         # ==============================================================
         # SPECIFICATIONS

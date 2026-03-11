@@ -491,8 +491,15 @@ function NavPanel({
                   </p>
                 )}
                 {ref.is_version_pinned && !ref.is_suspect && (
-                  <p className="mt-0.5 text-[10px] text-blue-500">
-                    Pinned to v{ref.pinned_version}
+                  <p
+                    className="mt-0.5 cursor-pointer text-[10px] text-blue-500 hover:text-blue-700 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCompare(ref);
+                    }}
+                    title="Compare versions"
+                  >
+                    v{ref.pinned_version}
                   </p>
                 )}
               </button>

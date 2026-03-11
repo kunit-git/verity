@@ -21,6 +21,7 @@ def generate_markdown(item_id, max_depth=6):
         """Build a dict of all available placeholder values for an item."""
         ctx = {
             "heading": "#" * min(depth, 6),
+            "id": str(item.id),
             "title": item.title,
             "description": item.description or "",
             "status": item.status.replace("_", " "),
@@ -44,7 +45,7 @@ def generate_markdown(item_id, max_depth=6):
         def replacer(match):
             key = match.group(1)
             return ctx.get(key, "")
-        return re.sub(r"\{\{(\w+)\}\}", replacer, template_str)
+        return re.sub(r"\{\{([\w-]+)\}\}", replacer, template_str)
 
     def _render_default(item, ctx, field_values):
         """Original hardcoded rendering logic."""

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Download, Trash2, Inbox, X, ArrowLeft } from "lucide-react";
 import { getMailboxArtifacts, getMailboxArtifact, deleteMailboxArtifact } from "../api/mailbox";
 import type { MailboxArtifactDetail } from "../types";
@@ -94,8 +95,8 @@ export default function MailboxPage() {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto bg-white p-8">
-          <article className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700 prose-hr:border-gray-200">
-            <Markdown>{viewing.content}</Markdown>
+          <article className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700 prose-hr:border-gray-200 prose-table:text-gray-700 prose-th:text-gray-900 prose-td:text-gray-700">
+            <Markdown remarkPlugins={[remarkGfm]}>{viewing.content}</Markdown>
           </article>
         </div>
       </div>

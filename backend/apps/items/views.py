@@ -110,7 +110,7 @@ class ItemTypeViewSet(viewsets.ModelViewSet):
                 updated_at = None
 
             builtin_fields = [
-                "heading", "title", "description", "status",
+                "heading", "id", "title", "description", "status",
                 "item_type", "current_version", "created_by",
                 "created_at", "updated_at",
             ]

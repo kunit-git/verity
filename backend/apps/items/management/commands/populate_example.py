@@ -20,7 +20,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.items.models import CustomFieldDefinition, CustomFieldValue, Item, ItemType
+from apps.items.models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType
 from apps.matrices.models import Matrix, MatrixColumn
 from apps.relations.models import ItemRelation, RelationType
 
@@ -140,6 +140,7 @@ class Command(BaseCommand):
         from apps.items.models import ItemVersion
         ItemVersion.all_objects.all().hard_delete()
         Item.all_objects.all().hard_delete()
+        DocumentTemplate.all_objects.all().hard_delete()
         CustomFieldDefinition.all_objects.all().hard_delete()
         ItemType.all_objects.all().hard_delete()
         RelationType.all_objects.filter(is_builtin=False).hard_delete()
@@ -334,6 +335,63 @@ class Command(BaseCommand):
             role="editor",
         )
         self.stdout.write("Created user: demo / demo1234 (role: editor)\n")
+
+        # ------------------------------------------------------------------
+        # Document templates
+        # ------------------------------------------------------------------
+        self.stdout.write("Seeding document templates...")
+        doc_templates = [
+            (
+                "information",
+                "{{heading}} {{title}}\n\n{{description}}\n",
+            ),
+            (
+                "requirement",
+                "{{heading}} {{title}}\n\n"
+                "| Field | Value |\n"
+                "|---|---|\n"
+                "| **Status** | {{status}} |\n"
+                "| **Priority** | {{priority}} |\n"
+                "| **Verification Method** | {{verification-method}} |\n"
+                "| **Version** | {{current_version}} |\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "risk",
+                "{{heading}} {{title}}\n\n"
+                "**Severity:** {{severity}} | **Likelihood:** {{likelihood}}\n\n"
+                "{{description}}\n\n"
+                "**Mitigation:** {{mitigation}}\n",
+            ),
+            (
+                "test-case",
+                "{{heading}} {{title}}\n\n"
+                "**Status:** {{status}} | **Version:** {{current_version}}\n\n"
+                "{{description}}\n\n"
+                "**Test Steps:**\n\n{{test-steps}}\n\n"
+                "**Expected Result:** {{expected-result}}\n",
+            ),
+            (
+                "failure-mode",
+                "{{heading}} {{title}}\n\n"
+                "**Severity:** {{severity}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "threat",
+                "{{heading}} {{title}}\n\n"
+                "**Threat Level:** {{threat-level}} | **Attack Vector:** {{attack-vector}}\n\n"
+                "**Threat Agent:** {{threat-agent}}\n\n"
+                "{{description}}\n",
+            ),
+        ]
+        for type_slug, template_str in doc_templates:
+            item_type = self._types[type_slug]
+            DocumentTemplate.objects.update_or_create(
+                item_type=item_type,
+                defaults={"template": template_str, "updated_by": self._author},
+            )
+            self.stdout.write(f"  Seeded: DocumentTemplate for '{type_slug}'")
 
         self.stdout.write("Building Autonomous Vehicle document-deliverable example...")
         self._build()

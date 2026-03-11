@@ -27,8 +27,8 @@ class UserSerializer(serializers.ModelSerializer):
 class UserManagementSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "date_joined"]
-        read_only_fields = ["id", "username", "email", "date_joined"]
+        fields = ["id", "username", "email", "role", "date_joined", "account_status", "is_active"]
+        read_only_fields = ["id", "username", "email", "date_joined", "account_status", "is_active"]
 
 
 class ChangeOwnPasswordSerializer(serializers.Serializer):

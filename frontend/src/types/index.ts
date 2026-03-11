@@ -4,6 +4,8 @@ export interface User {
   email: string;
   role: "viewer" | "editor" | "admin";
   date_joined: string;
+  account_status: "active" | "locked" | "deleted";
+  is_active: boolean;
 }
 
 export interface CustomFieldDefinition {

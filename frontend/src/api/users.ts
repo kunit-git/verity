@@ -49,3 +49,18 @@ export async function updateSiteSettings(
   const { data } = await api.patch<SiteSettings>("/auth/settings/", patch);
   return data;
 }
+
+export async function lockUser(id: number): Promise<User> {
+  const { data } = await api.post<User>(`/auth/users/${id}/lock/`);
+  return data;
+}
+
+export async function unlockUser(id: number): Promise<User> {
+  const { data } = await api.post<User>(`/auth/users/${id}/unlock/`);
+  return data;
+}
+
+export async function deleteUser(id: number): Promise<User> {
+  const { data } = await api.post<User>(`/auth/users/${id}/delete/`);
+  return data;
+}

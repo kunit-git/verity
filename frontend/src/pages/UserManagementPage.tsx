@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, KeyRound } from "lucide-react";
-import { getUsers, updateUserRole, getSiteSettings, updateSiteSettings } from "../api/users";
+import { Users, KeyRound, Lock, LockOpen, Trash2 } from "lucide-react";
+import { getUsers, updateUserRole, getSiteSettings, updateSiteSettings, lockUser, unlockUser, deleteUser } from "../api/users";
 import { useAuth } from "../auth/AuthContext";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 import type { User } from "../types";
@@ -87,6 +87,21 @@ export default function UserManagementPage() {
   const roleMutation = useMutation({
     mutationFn: ({ id, role }: { id: number; role: User["role"] }) =>
       updateUserRole(id, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
+
+  const lockMutation = useMutation({
+    mutationFn: (id: number) => lockUser(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (id: number) => unlockUser(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteUser(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
@@ -179,16 +194,25 @@ export default function UserManagementPage() {
                     Role
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     Password
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {users?.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50">
+                {users?.map((u) => {
+                  const isLocked = u.account_status === "locked";
+                  const isSelf = u.id === me?.id;
+                  return (
+                  <tr key={u.id} className={`hover:bg-gray-50 ${isLocked ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
                       {u.username}
-                      {u.id === me?.id && (
+                      {isSelf && (
                         <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
                           you
                         </span>
@@ -203,7 +227,7 @@ export default function UserManagementPage() {
                     <td className="px-4 py-3">
                       <select
                         value={u.role}
-                        disabled={u.id === me?.id}
+                        disabled={isSelf || isLocked}
                         onChange={(e) =>
                           roleMutation.mutate({
                             id: u.id,
@@ -220,6 +244,17 @@ export default function UserManagementPage() {
                       </select>
                     </td>
                     <td className="px-4 py-3">
+                      {isLocked ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          Locked
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                          Active
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <button
                         onClick={() =>
                           setPasswordTarget({
@@ -227,14 +262,53 @@ export default function UserManagementPage() {
                             username: u.username,
                           })
                         }
-                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        disabled={isLocked}
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                         title={`Change password for ${u.username}`}
                       >
                         <KeyRound className="h-4 w-4" />
                       </button>
                     </td>
+                    <td className="px-4 py-3">
+                      {!isSelf && (
+                        <div className="flex items-center gap-1">
+                          {isLocked ? (
+                            <button
+                              onClick={() => unlockMutation.mutate(u.id)}
+                              disabled={unlockMutation.isPending}
+                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                              title={`Unlock ${u.username}`}
+                            >
+                              <LockOpen className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => lockMutation.mutate(u.id)}
+                              disabled={lockMutation.isPending}
+                              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                              title={`Lock ${u.username}`}
+                            >
+                              <Lock className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Permanently delete the account "${u.username}"? This cannot be undone.`)) {
+                                deleteMutation.mutate(u.id);
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                            className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            title={`Delete ${u.username}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

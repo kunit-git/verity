@@ -8,10 +8,20 @@ class User(AbstractUser):
         EDITOR = "editor", "Editor"
         ADMIN = "admin", "Admin"
 
+    class AccountStatus(models.TextChoices):
+        ACTIVE = "active", "Active"
+        LOCKED = "locked", "Locked"
+        DELETED = "deleted", "Deleted"
+
     role = models.CharField(
         max_length=20,
         choices=Role.choices,
         default=Role.VIEWER,
+    )
+    account_status = models.CharField(
+        max_length=20,
+        choices=AccountStatus.choices,
+        default=AccountStatus.ACTIVE,
     )
 
     class Meta:

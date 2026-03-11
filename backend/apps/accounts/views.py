@@ -69,6 +69,11 @@ class AdminChangePasswordView(APIView):
 
     def post(self, request, pk):
         user = generics.get_object_or_404(User, pk=pk)
+        if user.account_status == "deleted":
+            return Response(
+                {"detail": "Cannot change password for a deleted account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = AdminChangePasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user.set_password(serializer.validated_data["new_password"])
@@ -79,8 +84,13 @@ class AdminChangePasswordView(APIView):
 class UserListView(generics.ListAPIView):
     serializer_class = UserManagementSerializer
     permission_classes = [IsAdmin]
-    queryset = User.objects.all().order_by("date_joined")
     pagination_class = None
+
+    def get_queryset(self):
+        qs = User.objects.all().order_by("date_joined")
+        if self.request.query_params.get("include_deleted", "").lower() != "true":
+            qs = qs.exclude(account_status="deleted")
+        return qs
 
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
@@ -88,3 +98,61 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAdmin]
     queryset = User.objects.all()
     http_method_names = ["get", "patch", "head", "options"]
+
+
+class LockUserView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        user = generics.get_object_or_404(User, pk=pk)
+        if user.pk == request.user.pk:
+            return Response(
+                {"detail": "You cannot lock your own account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.account_status == "deleted":
+            return Response(
+                {"detail": "Cannot lock a deleted account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.account_status = "locked"
+        user.is_active = False
+        user.save(update_fields=["account_status", "is_active"])
+        return Response(UserManagementSerializer(user).data)
+
+
+class UnlockUserView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        user = generics.get_object_or_404(User, pk=pk)
+        if user.account_status != "locked":
+            return Response(
+                {"detail": "Only locked accounts can be unlocked."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.account_status = "active"
+        user.is_active = True
+        user.save(update_fields=["account_status", "is_active"])
+        return Response(UserManagementSerializer(user).data)
+
+
+class DeleteUserView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        user = generics.get_object_or_404(User, pk=pk)
+        if user.pk == request.user.pk:
+            return Response(
+                {"detail": "You cannot delete your own account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.account_status == "deleted":
+            return Response(
+                {"detail": "Account is already deleted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.account_status = "deleted"
+        user.is_active = False
+        user.save(update_fields=["account_status", "is_active"])
+        return Response(UserManagementSerializer(user).data)

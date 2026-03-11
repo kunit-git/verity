@@ -11,6 +11,7 @@ import {
   Compass,
   Table2,
   Users,
+  FileText,
   Inbox,
   KeyRound,
   PanelLeftClose,
@@ -27,6 +28,7 @@ const navItems = [
 const adminItems = [
   { to: "/manage/item-types", icon: Settings, label: "Item Types" },
   { to: "/manage/relation-types", icon: Settings, label: "Relation Types" },
+  { to: "/manage/templates", icon: FileText, label: "Doc Templates" },
 ];
 
 const superAdminItems = [

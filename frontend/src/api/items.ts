@@ -1,5 +1,6 @@
 import api from "./client";
 import type {
+  DocumentTemplateResponse,
   Item,
   ItemListItem,
   ItemType,
@@ -140,4 +141,22 @@ export async function getItemVersion(itemId: string, versionNumber: number) {
     `/items/${itemId}/versions/${versionNumber}/`
   );
   return data;
+}
+
+export async function getDocumentTemplate(itemTypeId: string) {
+  const { data } = await api.get<DocumentTemplateResponse>(
+    `/item-types/${itemTypeId}/template/`
+  );
+  return data;
+}
+
+export async function saveDocumentTemplate(itemTypeId: string, template: string) {
+  const { data } = await api.put(`/item-types/${itemTypeId}/template/`, {
+    template,
+  });
+  return data;
+}
+
+export async function deleteDocumentTemplate(itemTypeId: string) {
+  await api.delete(`/item-types/${itemTypeId}/template/`);
 }

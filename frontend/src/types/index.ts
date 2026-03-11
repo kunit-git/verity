@@ -138,6 +138,16 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
+// ---- Document Templates ----
+
+export interface DocumentTemplateResponse {
+  id?: string;
+  template: string | null;
+  default_template: string;
+  available_fields: string[];
+  updated_at?: string;
+}
+
 // ---- Mailbox ----
 
 export interface MailboxArtifact {

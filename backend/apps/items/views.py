@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.relations.models import ItemRelation, RelationType
-from .models import CustomFieldDefinition, CustomFieldValue, Item, ItemType, ItemVersion
+from .models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType, ItemVersion
 from .serializers import (
     CustomFieldDefinitionSerializer,
     ItemListSerializer,
@@ -78,6 +78,79 @@ class ItemTypeViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+    def _default_template(self, item_type):
+        lines = [
+            "{{heading}} {{title}}",
+            "",
+            "**Type:** {{item_type}} | **Status:** {{status}} | **Version:** {{current_version}}",
+            "",
+            "{{description}}",
+            "",
+        ]
+        for cf in CustomFieldDefinition.objects.filter(item_type=item_type):
+            lines.append(f"- **{cf.name}:** {{{{{cf.slug}}}}}")
+        lines.append("")
+        lines.append("*Created by {{created_by}} on {{created_at}} · Updated {{updated_at}}*")
+        return "\n".join(lines)
+
+    @action(detail=True, methods=["get", "put", "delete"], url_path="template")
+    def template(self, request, pk=None):
+        item_type = self.get_object()
+
+        if request.method == "GET":
+            try:
+                dt = DocumentTemplate.objects.get(item_type=item_type)
+                template_str = dt.template
+                template_id = str(dt.id)
+                updated_at = dt.updated_at.isoformat()
+            except DocumentTemplate.DoesNotExist:
+                template_str = None
+                template_id = None
+                updated_at = None
+
+            builtin_fields = [
+                "heading", "title", "description", "status",
+                "item_type", "current_version", "created_by",
+                "created_at", "updated_at",
+            ]
+            custom_slugs = list(
+                CustomFieldDefinition.objects.filter(item_type=item_type)
+                .values_list("slug", flat=True)
+            )
+
+            return Response({
+                "id": template_id,
+                "template": template_str,
+                "default_template": self._default_template(item_type),
+                "available_fields": builtin_fields + custom_slugs,
+                "updated_at": updated_at,
+            })
+
+        if request.method == "PUT":
+            template_str = request.data.get("template", "")
+            dt, _created = DocumentTemplate.all_objects.get_or_create(
+                item_type=item_type,
+                is_deleted=False,
+                defaults={"template": template_str, "updated_by": request.user},
+            )
+            if not _created:
+                dt.template = template_str
+                dt.updated_by = request.user
+                dt.save(update_fields=["template", "updated_by", "updated_at"])
+            return Response({
+                "id": str(dt.id),
+                "template": dt.template,
+                "updated_at": dt.updated_at.isoformat(),
+            })
+
+        # DELETE
+        try:
+            dt = DocumentTemplate.objects.get(item_type=item_type)
+            dt.delete()
+        except DocumentTemplate.DoesNotExist:
+            pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ItemViewSet(viewsets.ModelViewSet):

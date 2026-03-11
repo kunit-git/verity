@@ -49,6 +49,9 @@ class ItemType(SoftDeleteModel):
             CustomFieldValue.all_objects.filter(
                 field_definition_id__in=field_ids, is_deleted=False
             ).update(is_deleted=True, deleted_at=now)
+        DocumentTemplate.all_objects.filter(
+            item_type=self, is_deleted=False
+        ).update(is_deleted=True, deleted_at=now)
 
 
 class CustomFieldDefinition(SoftDeleteModel):
@@ -169,6 +172,32 @@ class ItemVersion(SoftDeleteModel):
 
     def __str__(self):
         return f"{self.item} v{self.version_number}"
+
+
+class DocumentTemplate(SoftDeleteModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    item_type = models.OneToOneField(
+        ItemType, on_delete=models.PROTECT, related_name="document_template"
+    )
+    template = models.TextField()
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "items_document_template"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item_type"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_document_template_item_type",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Template for {self.item_type.name}"
 
 
 class CustomFieldValue(SoftDeleteModel):

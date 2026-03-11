@@ -14,6 +14,7 @@ import TableListPage from "./pages/TableListPage";
 import TableEditorPage from "./pages/TableEditorPage";
 import TableViewPage from "./pages/TableViewPage";
 import MailboxPage from "./pages/MailboxPage";
+import DocumentTemplateManager from "./pages/DocumentTemplateManager";
 
 function ItemEditWrapper() {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +39,7 @@ export default function App() {
             path="/manage/relation-types"
             element={<RelationTypeManager />}
           />
+          <Route path="/manage/templates" element={<DocumentTemplateManager />} />
           <Route path="/manage/users" element={<UserManagementPage />} />
           <Route path="/mailbox" element={<MailboxPage />} />
           <Route path="/tables" element={<TableListPage />} />

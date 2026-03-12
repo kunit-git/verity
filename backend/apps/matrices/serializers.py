@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .formula import validate_formula
 from .models import Matrix, MatrixColumn
 
 
@@ -26,6 +27,7 @@ class MatrixColumnSerializer(serializers.ModelSerializer):
             "id",
             "position",
             "label",
+            "column_kind",
             "seed_item_type",
             "seed_item_type_name",
             "seed_container",
@@ -35,12 +37,16 @@ class MatrixColumnSerializer(serializers.ModelSerializer):
             "relation_forward_label",
             "relation_reverse_label",
             "direction",
+            "formula",
         ]
         read_only_fields = ["id"]
 
     def validate(self, data):
         # Merge with instance values for partial updates
         position = data.get("position", getattr(self.instance, "position", None))
+        column_kind = data.get(
+            "column_kind", getattr(self.instance, "column_kind", None)
+        )
         seed_item_type = data.get(
             "seed_item_type", getattr(self.instance, "seed_item_type", None)
         )
@@ -50,8 +56,20 @@ class MatrixColumnSerializer(serializers.ModelSerializer):
         direction = data.get(
             "direction", getattr(self.instance, "direction", None)
         )
+        formula = data.get(
+            "formula", getattr(self.instance, "formula", "")
+        )
+
+        # Auto-set column_kind from position if not provided
+        if not column_kind:
+            column_kind = "seed" if position == 0 else "traversal"
+            data["column_kind"] = column_kind
 
         if position == 0:
+            if column_kind != "seed":
+                raise serializers.ValidationError(
+                    "Column 0 must be a seed column."
+                )
             if not seed_item_type:
                 raise serializers.ValidationError(
                     "Column 0 (seed) must specify seed_item_type."
@@ -60,15 +78,42 @@ class MatrixColumnSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     "Column 0 (seed) must not specify relation_type or direction."
                 )
-        else:
+            if formula:
+                raise serializers.ValidationError(
+                    "Seed columns must not have a formula."
+                )
+        elif column_kind == "traversal":
             if not relation_type:
                 raise serializers.ValidationError(
-                    "Traversal columns (position > 0) must specify relation_type."
+                    "Traversal columns must specify relation_type."
                 )
             if not direction:
                 raise serializers.ValidationError(
-                    "Traversal columns (position > 0) must specify direction."
+                    "Traversal columns must specify direction."
                 )
+            if formula:
+                raise serializers.ValidationError(
+                    "Traversal columns must not have a formula."
+                )
+        elif column_kind == "formula":
+            if not formula:
+                raise serializers.ValidationError(
+                    "Formula columns must specify a formula."
+                )
+            if relation_type or direction:
+                raise serializers.ValidationError(
+                    "Formula columns must not specify relation_type or direction."
+                )
+            errors = validate_formula(formula)
+            if errors:
+                raise serializers.ValidationError(
+                    f"Invalid formula: {errors[0]}"
+                )
+        else:
+            raise serializers.ValidationError(
+                f"Invalid column_kind: {column_kind}"
+            )
+
         return data
 
 

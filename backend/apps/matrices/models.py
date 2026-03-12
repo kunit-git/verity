@@ -33,6 +33,11 @@ class Matrix(SoftDeleteModel):
 
 
 class MatrixColumn(SoftDeleteModel):
+    class Kind(models.TextChoices):
+        SEED = "seed", "Seed"
+        TRAVERSAL = "traversal", "Traversal"
+        FORMULA = "formula", "Formula"
+
     class Direction(models.TextChoices):
         OUTGOING = "outgoing", "Outgoing"
         INCOMING = "incoming", "Incoming"
@@ -43,6 +48,11 @@ class MatrixColumn(SoftDeleteModel):
     )
     position = models.PositiveIntegerField()
     label = models.CharField(max_length=200)
+    column_kind = models.CharField(
+        max_length=10,
+        choices=Kind.choices,
+        default=Kind.TRAVERSAL,
+    )
 
     # Seed column fields (position == 0)
     seed_item_type = models.ForeignKey(
@@ -74,6 +84,9 @@ class MatrixColumn(SoftDeleteModel):
         null=True,
         blank=True,
     )
+
+    # Formula column fields
+    formula = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "matrices_matrix_column"

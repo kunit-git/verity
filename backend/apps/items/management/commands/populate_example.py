@@ -113,6 +113,7 @@ class Command(BaseCommand):
                     matrix=matrix,
                     position=0,
                     label=col["label"],
+                    column_kind=MatrixColumn.Kind.SEED,
                     seed_item_type=self._types[col["seed_item_type_slug"]],
                     seed_container=col.get("seed_container"),
                 )
@@ -121,6 +122,7 @@ class Command(BaseCommand):
                     matrix=matrix,
                     position=position,
                     label=col["label"],
+                    column_kind=MatrixColumn.Kind.TRAVERSAL,
                     relation_type=self._relations[col["relation_name"]],
                     direction=col["direction"],
                 )

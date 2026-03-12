@@ -11,7 +11,7 @@ import {
 import { getTable, createTable, updateTable } from "../api/tables";
 import { getItemTypes, getItems } from "../api/items";
 import { getRelationTypes } from "../api/relations";
-import type { TableColumnPayload, RelationType } from "../types";
+import type { TableColumnPayload, RelationType, ColumnKind } from "../types";
 
 export default function TableEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -46,24 +46,36 @@ export default function TableEditorPage() {
         existingTable.columns.map((c) => ({
           position: c.position,
           label: c.label,
+          column_kind: c.column_kind,
           seed_item_type: c.seed_item_type,
           seed_container: c.seed_container,
           relation_type: c.relation_type,
           direction: c.direction,
+          formula: c.formula,
         }))
       );
     }
   }, [existingTable]);
 
-  function addColumn() {
-    if (columns.length === 0) {
-      // First column is always the seed column
+  function addColumn(kind: ColumnKind) {
+    if (columns.length === 0 && kind === "seed") {
       setColumns([
         {
           position: 0,
           label: "",
+          column_kind: "seed",
           seed_item_type: null,
           seed_container: null,
+        },
+      ]);
+    } else if (kind === "formula") {
+      setColumns((prev) => [
+        ...prev,
+        {
+          position: prev.length,
+          label: "",
+          column_kind: "formula",
+          formula: "",
         },
       ]);
     } else {
@@ -72,6 +84,7 @@ export default function TableEditorPage() {
         {
           position: prev.length,
           label: "",
+          column_kind: "traversal",
           relation_type: null,
           direction: "outgoing",
         },
@@ -122,7 +135,10 @@ export default function TableEditorPage() {
     columns.length >= 1 &&
     columns.every((c) => c.label.trim()) &&
     columns[0]?.seed_item_type &&
-    columns.slice(1).every((c) => c.relation_type && c.direction);
+    columns.slice(1).every((c) => {
+      if (c.column_kind === "formula") return !!c.formula?.trim();
+      return c.relation_type && c.direction;
+    });
 
   return (
     <div className="mx-auto max-w-3xl p-6">
@@ -131,7 +147,7 @@ export default function TableEditorPage() {
       </h1>
       <p className="mt-1 text-sm text-gray-500">
         Define columns. Each column after the first follows a relation from the
-        previous column's items.
+        previous column's items, or computes a formula.
       </p>
 
       <div className="mt-6 space-y-5">
@@ -171,14 +187,35 @@ export default function TableEditorPage() {
         <div>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">Columns</h2>
-            <button
-              type="button"
-              onClick={addColumn}
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {columns.length === 0 ? "Add first column" : "Add column"}
-            </button>
+            {columns.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => addColumn("seed")}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add first column
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addColumn("traversal")}
+                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Traversal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addColumn("formula")}
+                  className="flex items-center gap-1 text-sm text-purple-600 hover:text-purple-700"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Formula
+                </button>
+              </div>
+            )}
           </div>
 
           {columns.length === 0 && (
@@ -194,6 +231,7 @@ export default function TableEditorPage() {
                 key={idx}
                 col={col}
                 idx={idx}
+                columns={columns}
                 isFirst={idx === 0}
                 isLast={idx === columns.length - 1}
                 itemTypes={itemTypes ?? []}
@@ -235,6 +273,7 @@ export default function TableEditorPage() {
 interface ColumnEditorProps {
   col: TableColumnPayload;
   idx: number;
+  columns: TableColumnPayload[];
   isFirst: boolean;
   isLast: boolean;
   itemTypes: { id: string; name: string; slug: string }[];
@@ -248,6 +287,7 @@ interface ColumnEditorProps {
 function ColumnEditor({
   col,
   idx,
+  columns,
   isFirst,
   isLast,
   itemTypes,
@@ -269,6 +309,16 @@ function ColumnEditor({
       ? `← ${selectedRelationType.reverse_label} (this item is target)`
       : "← Incoming (this item is target, next items are sources)";
 
+  const kindLabel =
+    col.column_kind === "formula"
+      ? "Formula Column"
+      : isFirst
+        ? "Seed Column"
+        : "Traversal Column";
+
+  const kindColor =
+    col.column_kind === "formula" ? "text-purple-500" : "text-gray-500";
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       {/* Column header row */}
@@ -279,8 +329,8 @@ function ColumnEditor({
         {!isFirst && (
           <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
         )}
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          {isFirst ? "Seed Column" : "Traversal Column"}
+        <span className={`text-xs font-semibold uppercase tracking-wider ${kindColor}`}>
+          {kindLabel}
         </span>
         <div className="ml-auto flex items-center gap-1">
           {!isFirst && (
@@ -322,7 +372,13 @@ function ColumnEditor({
             type="text"
             value={col.label}
             onChange={(e) => onUpdate({ label: e.target.value })}
-            placeholder={isFirst ? "e.g. Requirements" : "e.g. Test Cases"}
+            placeholder={
+              col.column_kind === "formula"
+                ? "e.g. Risk Score"
+                : isFirst
+                  ? "e.g. Requirements"
+                  : "e.g. Test Cases"
+            }
             className="mt-1 block w-full rounded border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -331,6 +387,13 @@ function ColumnEditor({
           <SeedColumnFields
             col={col}
             itemTypes={itemTypes}
+            onUpdate={onUpdate}
+          />
+        ) : col.column_kind === "formula" ? (
+          <FormulaColumnFields
+            col={col}
+            columns={columns}
+            idx={idx}
             onUpdate={onUpdate}
           />
         ) : (
@@ -533,5 +596,54 @@ function TraversalColumnFields({
         </div>
       )}
     </>
+  );
+}
+
+function FormulaColumnFields({
+  col,
+  columns,
+  idx,
+  onUpdate,
+}: {
+  col: TableColumnPayload;
+  columns: TableColumnPayload[];
+  idx: number;
+  onUpdate: (patch: Partial<TableColumnPayload>) => void;
+}) {
+  // Build reference hints from preceding columns
+  const refHints = columns
+    .filter((_, i) => i < idx && columns[i].column_kind !== "formula")
+    .map((c) => `$${c.position + 1}`);
+
+  return (
+    <div className="col-span-2">
+      <label className="block text-xs font-medium text-gray-600">
+        Formula <span className="text-red-500">*</span>
+      </label>
+      <input
+        type="text"
+        value={col.formula ?? ""}
+        onChange={(e) => onUpdate({ formula: e.target.value })}
+        placeholder="e.g. $1.threat-level * $2.severity"
+        className="mt-1 block w-full rounded border border-gray-300 px-2.5 py-1.5 font-mono text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+      />
+      <p className="mt-1.5 text-xs text-gray-400">
+        Use <code className="rounded bg-gray-100 px-1">$N.field-slug</code> to
+        reference a custom field from column N.
+        {refHints.length > 0 && (
+          <>
+            {" "}Available columns:{" "}
+            {refHints.map((h, i) => (
+              <span key={i}>
+                {i > 0 && ", "}
+                <code className="rounded bg-gray-100 px-1">{h}</code>
+              </span>
+            ))}
+          </>
+        )}
+        . Supports <code className="rounded bg-gray-100 px-1">+ - * / ( )</code>.
+        Choice fields are converted to numbers (1-based index).
+      </p>
+    </div>
   );
 }

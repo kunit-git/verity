@@ -2,7 +2,8 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Pencil, RefreshCw } from "lucide-react";
 import { getTable, getTableData } from "../api/tables";
-import type { TableDataCell } from "../types";
+import type { TableDataCell, TableFormulaCell } from "../types";
+import { isFormulaCell } from "../types";
 
 export default function TableViewPage() {
   const { id } = useParams<{ id: string }>();
@@ -91,8 +92,15 @@ export default function TableViewPage() {
                     {tableData.columns.map((col) => (
                       <th
                         key={col.position}
-                        className="min-w-[220px] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
+                        className={`min-w-[220px] px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 ${
+                          col.kind === "formula" ? "text-right" : "text-left"
+                        }`}
                       >
+                        {col.kind === "formula" && (
+                          <span className="mr-1 font-mono text-purple-400">
+                            fx
+                          </span>
+                        )}
                         {col.label}
                       </th>
                     ))}
@@ -105,6 +113,9 @@ export default function TableViewPage() {
                         <td key={colIdx} className="px-4 py-2.5">
                           <TableCell
                             cell={cell}
+                            isFormula={
+                              tableData.columns[colIdx]?.kind === "formula"
+                            }
                             onNavigate={(itemId) =>
                               navigate(`/items/${itemId}`)
                             }
@@ -125,9 +136,11 @@ export default function TableViewPage() {
 
 function TableCell({
   cell,
+  isFormula,
   onNavigate,
 }: {
-  cell: TableDataCell | null;
+  cell: TableDataCell | TableFormulaCell | null;
+  isFormula: boolean;
   onNavigate: (id: string) => void;
 }) {
   if (!cell) {
@@ -138,15 +151,29 @@ function TableCell({
     );
   }
 
-  return (
-    <button
-      onClick={() => onNavigate(cell.id)}
-      className="group w-full rounded px-1 py-0.5 text-left hover:bg-blue-50"
-    >
-      <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700">
-        {cell.title}
-      </p>
-      <p className="text-xs text-gray-400">{cell.item_type_name}</p>
-    </button>
-  );
+  if (isFormula && isFormulaCell(cell)) {
+    const display =
+      Number.isInteger(cell.value) ? cell.value.toString() : cell.value.toFixed(2);
+    return (
+      <span className="block text-right font-mono text-sm font-medium text-gray-800">
+        {display}
+      </span>
+    );
+  }
+
+  if ("id" in cell) {
+    return (
+      <button
+        onClick={() => onNavigate(cell.id)}
+        className="group w-full rounded px-1 py-0.5 text-left hover:bg-blue-50"
+      >
+        <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700">
+          {cell.title}
+        </p>
+        <p className="text-xs text-gray-400">{cell.item_type_name}</p>
+      </button>
+    );
+  }
+
+  return null;
 }

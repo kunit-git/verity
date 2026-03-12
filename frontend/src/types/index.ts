@@ -165,10 +165,13 @@ export interface MailboxArtifactDetail extends MailboxArtifact {
 
 // ---- Tables ----
 
+export type ColumnKind = "seed" | "traversal" | "formula";
+
 export interface TableColumn {
   id: string;
   position: number;
   label: string;
+  column_kind: ColumnKind;
   seed_item_type: string | null;
   seed_item_type_name: string | null;
   seed_container: string | null;
@@ -178,6 +181,7 @@ export interface TableColumn {
   relation_forward_label: string | null;
   relation_reverse_label: string | null;
   direction: "outgoing" | "incoming" | null;
+  formula: string | null;
 }
 
 export interface Table {
@@ -194,10 +198,12 @@ export interface Table {
 export interface TableColumnPayload {
   position: number;
   label: string;
+  column_kind?: ColumnKind;
   seed_item_type?: string | null;
   seed_container?: string | null;
   relation_type?: string | null;
   direction?: "outgoing" | "incoming" | null;
+  formula?: string | null;
 }
 
 export interface TablePayload {
@@ -209,6 +215,7 @@ export interface TablePayload {
 export interface TableDataColumn {
   position: number;
   label: string;
+  kind: ColumnKind;
 }
 
 export interface TableDataCell {
@@ -218,7 +225,17 @@ export interface TableDataCell {
   item_type_slug: string;
 }
 
+export interface TableFormulaCell {
+  value: number;
+}
+
+export function isFormulaCell(
+  cell: TableDataCell | TableFormulaCell | null,
+): cell is TableFormulaCell {
+  return cell !== null && "value" in cell && !("id" in cell);
+}
+
 export interface TableData {
   columns: TableDataColumn[];
-  rows: (TableDataCell | null)[][];
+  rows: (TableDataCell | TableFormulaCell | null)[][];
 }

@@ -35,8 +35,8 @@ export default function VaultAuditLogPage() {
   const { id } = useParams<{ id: string }>();
 
   const { data: vault } = useQuery({
-    queryKey: ["admin-vault-detail", id],
-    queryFn: () => vaultsApi.getVaults().then((vaults) => vaults.find((v) => v.id === id)),
+    queryKey: ["vault-detail-for-audit", id],
+    queryFn: () => vaultsApi.getMyVaults().then((vaults) => vaults.find((v) => v.id === id)),
     enabled: !!id,
   });
 

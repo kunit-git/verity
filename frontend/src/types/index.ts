@@ -25,6 +25,7 @@ export interface Vault {
   locked_by: number | null;
   locked_by_username: string | null;
   created_at: string;
+  my_role: "viewer" | "editor" | "admin" | null;
 }
 
 export interface VaultAuditLogEntry {

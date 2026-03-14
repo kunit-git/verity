@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Plus, Trash2, UserPlus, X, Lock, Unlock, ClipboardList } from "lucide-react";
 import * as vaultsApi from "../api/vaults";
 import { getUsers } from "../api/users";
+import { useAuth } from "../auth/AuthContext";
 import type { VaultMembership } from "../types";
 
 const VAULT_ROLES: VaultMembership["role"][] = ["viewer", "editor", "admin"];
@@ -17,6 +18,8 @@ function slugify(text: string) {
 }
 
 export default function VaultManagementPage() {
+  const { user } = useAuth();
+  const isSiteAdmin = user?.is_site_admin ?? false;
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [expandedVault, setExpandedVault] = useState<string | null>(null);
@@ -25,9 +28,12 @@ export default function VaultManagementPage() {
   const [newDesc, setNewDesc] = useState("");
   const [error, setError] = useState("");
 
+  // Site admins use the admin endpoint (all vaults); vault admins use my-vaults filtered to admin role
   const { data: vaults, isLoading } = useQuery({
-    queryKey: ["admin-vaults"],
-    queryFn: vaultsApi.getVaults,
+    queryKey: isSiteAdmin ? ["admin-vaults"] : ["my-vaults"],
+    queryFn: isSiteAdmin ? vaultsApi.getVaults : vaultsApi.getMyVaults,
+    select: (data) =>
+      isSiteAdmin ? data : data.filter((v) => v.my_role === "admin"),
   });
 
   const createMutation = useMutation({
@@ -54,6 +60,7 @@ export default function VaultManagementPage() {
     mutationFn: (id: string) => vaultsApi.lockVault(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+      queryClient.invalidateQueries({ queryKey: ["my-vaults"] });
     },
   });
 
@@ -61,6 +68,7 @@ export default function VaultManagementPage() {
     mutationFn: (id: string) => vaultsApi.unlockVault(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+      queryClient.invalidateQueries({ queryKey: ["my-vaults"] });
     },
   });
 
@@ -74,13 +82,15 @@ export default function VaultManagementPage() {
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Vault Management</h1>
-        <button
-          onClick={() => setShowCreate((v) => !v)}
-          className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          New Vault
-        </button>
+        {isSiteAdmin && (
+          <button
+            onClick={() => setShowCreate((v) => !v)}
+            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            New Vault
+          </button>
+        )}
       </div>
 
       {showCreate && (
@@ -193,17 +203,19 @@ export default function VaultManagementPage() {
                       <Lock className="h-4 w-4" />
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete vault "${vault.name}"?`)) {
-                        deleteMutation.mutate(vault.id);
-                      }
-                    }}
-                    className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                    title="Delete vault"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {isSiteAdmin && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete vault "${vault.name}"?`)) {
+                          deleteMutation.mutate(vault.id);
+                        }
+                      }}
+                      className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      title="Delete vault"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               {expandedVault === vault.id && (
@@ -212,7 +224,9 @@ export default function VaultManagementPage() {
             </div>
           ))}
           {!vaults?.length && (
-            <p className="py-8 text-center text-gray-500">No vaults yet.</p>
+            <p className="py-8 text-center text-gray-500">
+              {isSiteAdmin ? "No vaults yet." : "You are not an admin of any vaults."}
+            </p>
           )}
         </div>
       )}
@@ -243,6 +257,7 @@ function VaultMemberPanel({ vaultId, isLocked }: { vaultId: string; isLocked: bo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vault-members", vaultId] });
       queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+      queryClient.invalidateQueries({ queryKey: ["my-vaults"] });
       setShowAdd(false);
       setSelectedUserId(null);
       setSelectedRole("viewer");
@@ -262,6 +277,7 @@ function VaultMemberPanel({ vaultId, isLocked }: { vaultId: string; isLocked: bo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vault-members", vaultId] });
       queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+      queryClient.invalidateQueries({ queryKey: ["my-vaults"] });
     },
   });
 

@@ -36,8 +36,12 @@ const adminItems = [
   { to: "/manage/templates", icon: FileText, label: "Doc Templates" },
 ];
 
-const superAdminItems = [
+const siteAdminItems = [
   { to: "/manage/users", icon: Users, label: "Users" },
+  { to: "/manage/vaults", icon: Vault, label: "Vaults" },
+];
+
+const vaultAdminItems = [
   { to: "/manage/vaults", icon: Vault, label: "Vaults" },
 ];
 
@@ -208,7 +212,7 @@ export default function Layout() {
               </h3>
             )}
             <div className="mt-1 space-y-1">
-              {[...adminItems, ...(user?.is_site_admin ? superAdminItems : [])].map((item) => {
+              {[...adminItems, ...(user?.is_site_admin ? siteAdminItems : user?.vault_role === "admin" ? vaultAdminItems : [])].map((item) => {
                 const active = location.pathname === item.to;
                 return (
                   <Link

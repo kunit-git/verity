@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import SiteSettings
+from apps.vaults.permissions import IsVaultAdmin
 from .permissions import IsSiteAdmin
 from .serializers import (
     RegisterSerializer,
@@ -88,7 +89,7 @@ class AdminCreateUserView(generics.CreateAPIView):
 
 class UserListView(generics.ListAPIView):
     serializer_class = UserManagementSerializer
-    permission_classes = [IsSiteAdmin]
+    permission_classes = [IsSiteAdmin | IsVaultAdmin]
     pagination_class = None
 
     def get_queryset(self):

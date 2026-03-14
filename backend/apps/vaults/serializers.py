@@ -14,6 +14,7 @@ class VaultSerializer(serializers.ModelSerializer):
         source="locked_by.username", read_only=True, default=None
     )
     member_count = serializers.SerializerMethodField()
+    my_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Vault
@@ -30,6 +31,7 @@ class VaultSerializer(serializers.ModelSerializer):
             "locked_by",
             "locked_by_username",
             "created_at",
+            "my_role",
         ]
         read_only_fields = [
             "id",
@@ -42,6 +44,17 @@ class VaultSerializer(serializers.ModelSerializer):
 
     def get_member_count(self, obj):
         return VaultMembership.objects.filter(vault=obj).count()
+
+    def get_my_role(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+        if request.user.is_site_admin:
+            return "admin"
+        membership = VaultMembership.objects.filter(
+            vault=obj, user=request.user
+        ).values_list("role", flat=True).first()
+        return membership
 
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user

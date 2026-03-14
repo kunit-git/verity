@@ -143,28 +143,9 @@ class VaultMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
         return response
 
     def partial_update(self, request, *args, **kwargs):
-        err = self._check_vault_locked()
-        if err:
-            return err
-        membership = self.get_object()
-        err = self._check_site_admin(membership)
-        if err:
-            return err
-        old_role = membership.role
-        response = super().partial_update(request, *args, **kwargs)
-        membership.refresh_from_db()
-        if membership.role != old_role:
-            _log_audit(
-                membership.vault,
-                VaultAuditLog.Event.MEMBER_ROLE_CHANGED,
-                request.user,
-                {
-                    "user": membership.user.username,
-                    "old_role": old_role,
-                    "new_role": membership.role,
-                },
-            )
-        return response
+        # Checks and audit logging happen in update() which DRF calls from here.
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         err = self._check_vault_locked()

@@ -59,6 +59,8 @@ export default function ItemNavigator() {
   });
 
   const [showAddRelation, setShowAddRelation] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -88,6 +90,18 @@ export default function ItemNavigator() {
       navigate("/items");
     },
   });
+
+  // Close add menu on outside click
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setShowAddMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showAddMenu]);
 
   // Keyboard navigation
   const handleKeyNav = useCallback(
@@ -183,13 +197,33 @@ export default function ItemNavigator() {
           >
             <Pencil className="h-4 w-4" />
           </Link>
-          <Link
-            to={`/items/new?type=${encodeURIComponent(item.item_type_slug)}${nav?.parent ? `&parent=${nav.parent.id}` : ""}`}
-            className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
-            title={nav?.parent ? `Add sibling ${item.item_type_name}` : `New ${item.item_type_name}`}
-          >
-            <Plus className="h-4 w-4" />
-          </Link>
+          <div className="relative" ref={addMenuRef}>
+            <button
+              onClick={() => setShowAddMenu(!showAddMenu)}
+              className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
+              title="Add item"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            {showAddMenu && (
+              <div className="absolute right-0 z-50 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                <Link
+                  to={`/items/new?type=${encodeURIComponent(item.item_type_slug)}${nav?.parent ? `&parent=${nav.parent.id}` : ""}`}
+                  className="block px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => setShowAddMenu(false)}
+                >
+                  Add Sibling
+                </Link>
+                <Link
+                  to={`/items/new?parent=${id}`}
+                  className="block px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => setShowAddMenu(false)}
+                >
+                  Add Child
+                </Link>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowHistory(!showHistory)}
             className={`rounded p-1.5 hover:bg-gray-100 ${showHistory ? "text-blue-600 bg-blue-50" : "text-gray-500"}`}

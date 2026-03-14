@@ -10,7 +10,7 @@ Item types used:
   Requirement, Risk, Test Case, Failure Mode, Failure Cause
 Relation types:
   Built-in:  is_composed_of, traces_to
-  Custom:    verifies, derives_from, mitigates, causes
+  Custom:    verifies, derives_from, decomposed_to, mitigates, causes
 
 Usage:
     python manage.py populate_example
@@ -83,6 +83,11 @@ class Command(BaseCommand):
         """Shorthand: source mitigates each target."""
         for target in targets:
             self._rel("mitigates", source, target)
+
+    def _decomposes(self, parent_req, *child_reqs):
+        """Shorthand: parent_req decomposed_to each child_req."""
+        for child in child_reqs:
+            self._rel("decomposed_to", parent_req, child)
 
     def _causes(self, cause, *modes):
         """Shorthand: cause causes each failure mode."""
@@ -271,6 +276,15 @@ class Command(BaseCommand):
                 "forward_label": "derives from",
                 "reverse_label": "is parent of",
                 "description": "A lower-level requirement derives from a higher-level requirement.",
+                "source_item_type": self._types["requirement"],
+                "target_item_type": self._types["requirement"],
+            },
+            {
+                "kind": "composition",
+                "name": "decomposed_to",
+                "forward_label": "is decomposed to",
+                "reverse_label": "decomposes",
+                "description": "A high-level requirement is decomposed into lower-level sub-requirements that together fulfil it.",
                 "source_item_type": self._types["requirement"],
                 "target_item_type": self._types["requirement"],
             },
@@ -846,6 +860,84 @@ class Command(BaseCommand):
         # Cross-subsystem derivation
         self._derives(req_brake, req_latency, req_path)
         self._derives(req_safe_state, req_gps, req_integrity)
+
+        # ==============================================================
+        # REQUIREMENT DECOMPOSITION
+        # Demonstrates how a high-level requirement is decomposed into
+        # lower-level sub-requirements that together fulfil it.
+        # ==============================================================
+
+        # Decompose "System shall detect and classify objects within 100 ms"
+        # into its time-budget sub-requirements
+        req_acquire = self._item(
+            "requirement",
+            "Sensor data acquisition shall complete within 15 ms",
+            "Raw data from all active sensors (cameras, lidar, radar) must "
+            "be captured, timestamped, and available to the processing "
+            "pipeline within 15 ms of the sensor trigger.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_preprocess = self._item(
+            "requirement",
+            "Sensor preprocessing shall complete within 20 ms",
+            "Image debayering, lidar point-cloud assembly, and radar FFT "
+            "processing shall each complete within 20 ms of data arrival.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_detect = self._item(
+            "requirement",
+            "Object detection inference shall complete within 25 ms",
+            "The neural-network inference pipeline shall produce bounding "
+            "boxes and class labels within 25 ms per frame on the target "
+            "compute platform.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        req_track = self._item(
+            "requirement",
+            "Object tracking and association shall complete within 15 ms",
+            "Multi-object tracking shall associate detections across frames "
+            "and update track state within 15 ms.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_publish = self._item(
+            "requirement",
+            "Object list publication shall complete within 5 ms",
+            "The final classified object list shall be serialised and "
+            "published to the vehicle bus within 5 ms of track update.",
+            priority="Medium", **{"verification-method": "Test"},
+        )
+
+        self._decomposes(req_sys_perf, req_acquire, req_preprocess,
+                         req_detect, req_track, req_publish)
+
+        # Decompose "System availability ≥ 99.9 %" into constituent
+        # availability sub-requirements per subsystem
+        req_perc_avail = self._item(
+            "requirement",
+            "Perception subsystem availability shall be ≥ 99.95 %",
+            "The perception pipeline shall maintain operational availability "
+            "of at least 99.95 % to meet the overall system budget, "
+            "accounting for sensor redundancy failover time.",
+            priority="High", **{"verification-method": "Analysis"},
+        )
+        req_plan_avail = self._item(
+            "requirement",
+            "Motion planning availability shall be ≥ 99.95 %",
+            "The trajectory planner shall remain available at least 99.95 % "
+            "of the time, with a hot-standby failover completing in < 50 ms.",
+            priority="High", **{"verification-method": "Analysis"},
+        )
+        req_actuation_avail = self._item(
+            "requirement",
+            "Actuation subsystem availability shall be ≥ 99.99 %",
+            "Steering, braking, and throttle actuators shall maintain "
+            "operational availability of at least 99.99 % through "
+            "redundant hardware channels.",
+            priority="Critical", **{"verification-method": "Analysis"},
+        )
+
+        self._decomposes(req_sys_avail, req_perc_avail, req_plan_avail,
+                         req_actuation_avail)
 
         # ==============================================================
         # PERCEPTION FMEA CONTENTS
@@ -1895,6 +1987,32 @@ class Command(BaseCommand):
                 {
                     "label": "Mitigations",
                     "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 7. Requirement Decomposition: High-level → Sub-requirements
+        self._matrix(
+            name="Requirement Decomposition Matrix",
+            description=(
+                "Shows how high-level system requirements are decomposed "
+                "into lower-level sub-requirements."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Decomposed To",
+                    "relation_name": "decomposed_to",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
                     "direction": MatrixColumn.Direction.INCOMING,
                 },
             ],

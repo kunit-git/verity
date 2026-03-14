@@ -9,6 +9,9 @@ from apps.core.models import SoftDeleteModel
 
 class ItemType(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vault = models.ForeignKey(
+        "vaults.Vault", on_delete=models.PROTECT, related_name="item_types",
+    )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=100)
     description = models.TextField(blank=True)
@@ -21,12 +24,12 @@ class ItemType(SoftDeleteModel):
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["name"],
+                fields=["vault", "name"],
                 condition=models.Q(is_deleted=False),
                 name="unique_alive_item_type_name",
             ),
             models.UniqueConstraint(
-                fields=["slug"],
+                fields=["vault", "slug"],
                 condition=models.Q(is_deleted=False),
                 name="unique_alive_item_type_slug",
             ),

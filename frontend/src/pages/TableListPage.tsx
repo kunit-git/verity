@@ -106,7 +106,7 @@ export default function TableListPage() {
                       {new Date(t.updated_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {user?.role !== "viewer" && (
+                      {user?.vault_role && user.vault_role !== "viewer" && (
                         <button
                           onClick={() => {
                             if (confirm(`Delete table "${t.name}"?`))

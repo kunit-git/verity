@@ -93,7 +93,7 @@ function ItemTypeRow({
 function TemplateEditor({ itemTypeId }: { itemTypeId: string }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const isEditor = user?.role === "editor" || user?.role === "admin";
+  const isEditor = user?.vault_role === "editor" || user?.vault_role === "admin";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data, isLoading } = useQuery({

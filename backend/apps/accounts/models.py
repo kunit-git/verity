@@ -3,29 +3,46 @@ from django.db import models
 
 
 class User(AbstractUser):
-    class Role(models.TextChoices):
-        VIEWER = "viewer", "Viewer"
-        EDITOR = "editor", "Editor"
-        ADMIN = "admin", "Admin"
-
     class AccountStatus(models.TextChoices):
         ACTIVE = "active", "Active"
         LOCKED = "locked", "Locked"
         DELETED = "deleted", "Deleted"
 
-    role = models.CharField(
-        max_length=20,
-        choices=Role.choices,
-        default=Role.VIEWER,
-    )
+    is_site_admin = models.BooleanField(default=False)
     account_status = models.CharField(
         max_length=20,
         choices=AccountStatus.choices,
         default=AccountStatus.ACTIVE,
     )
+    active_vault = models.ForeignKey(
+        "vaults.Vault",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
 
     class Meta:
         db_table = "accounts_user"
+
+    def get_vault_role(self):
+        """Return the user's effective role in their active vault."""
+        if not hasattr(self, "_cached_vault_role"):
+            if self.is_site_admin:
+                self._cached_vault_role = "admin"
+            elif self.active_vault_id:
+                from apps.vaults.models import VaultMembership
+
+                try:
+                    m = VaultMembership.objects.get(
+                        vault_id=self.active_vault_id, user=self
+                    )
+                    self._cached_vault_role = m.role
+                except VaultMembership.DoesNotExist:
+                    self._cached_vault_role = None
+            else:
+                self._cached_vault_role = None
+        return self._cached_vault_role
 
 
 class SiteSettings(models.Model):

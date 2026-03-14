@@ -11,6 +11,7 @@ urlpatterns = [
     path("me/", views.MeView.as_view(), name="me"),
     path("me/password/", views.ChangeOwnPasswordView.as_view(), name="change-own-password"),
     path("users/", views.UserListView.as_view(), name="user-list"),
+    path("users/create/", views.AdminCreateUserView.as_view(), name="user-create"),
     path("users/<int:pk>/", views.UserDetailView.as_view(), name="user-detail"),
     path("users/<int:pk>/password/", views.AdminChangePasswordView.as_view(), name="admin-change-password"),
     path("users/<int:pk>/lock/", views.LockUserView.as_view(), name="user-lock"),

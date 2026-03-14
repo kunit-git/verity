@@ -153,6 +153,7 @@ class MatrixWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         columns_data = validated_data.pop("columns")
         validated_data["created_by"] = self.context["request"].user
+        validated_data["vault"] = self.context["request"].user.active_vault
         matrix = Matrix.objects.create(**validated_data)
         for col_data in columns_data:
             MatrixColumn.objects.create(matrix=matrix, **col_data)

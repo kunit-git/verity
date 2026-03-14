@@ -36,6 +36,10 @@ class ItemTypeCreateSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "slug", "description", "icon"]
         read_only_fields = ["id"]
 
+    def create(self, validated_data):
+        validated_data["vault"] = self.context["request"].user.active_vault
+        return super().create(validated_data)
+
 
 class ItemVersionSerializer(serializers.ModelSerializer):
     created_by_username = serializers.CharField(

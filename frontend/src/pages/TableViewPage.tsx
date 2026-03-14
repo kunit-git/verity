@@ -1,13 +1,43 @@
+import { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Pencil, RefreshCw } from "lucide-react";
+import {
+  Pencil,
+  RefreshCw,
+  ChevronRight,
+  ChevronDown,
+  ChevronsUpDown,
+} from "lucide-react";
 import { getTable, getTableData } from "../api/tables";
 import type { TableDataCell, TableFormulaCell } from "../types";
 import { isFormulaCell } from "../types";
 
+type Row = (TableDataCell | TableFormulaCell | null)[];
+
+interface RowGroup {
+  seedId: string | null;
+  rows: Row[];
+}
+
+function groupRowsBySeed(rows: Row[]): RowGroup[] {
+  const groups: RowGroup[] = [];
+  for (const row of rows) {
+    const seedCell = row[0];
+    const seedId = seedCell && "id" in seedCell ? seedCell.id : null;
+    const last = groups[groups.length - 1];
+    if (last && last.seedId === seedId) {
+      last.rows.push(row);
+    } else {
+      groups.push({ seedId, rows: [row] });
+    }
+  }
+  return groups;
+}
+
 export default function TableViewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const { data: table } = useQuery({
     queryKey: ["table", id],
@@ -25,6 +55,42 @@ export default function TableViewPage() {
     queryFn: () => getTableData(id!),
     enabled: !!id,
   });
+
+  const groups = useMemo(
+    () => (tableData ? groupRowsBySeed(tableData.rows) : []),
+    [tableData],
+  );
+
+  const multiRowGroupIds = useMemo(
+    () =>
+      new Set(
+        groups
+          .filter((g) => g.rows.length > 1 && g.seedId)
+          .map((g) => g.seedId!),
+      ),
+    [groups],
+  );
+
+  const toggleGroup = useCallback((seedId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(seedId)) next.delete(seedId);
+      else next.add(seedId);
+      return next;
+    });
+  }, []);
+
+  const allExpanded =
+    multiRowGroupIds.size > 0 &&
+    [...multiRowGroupIds].every((id) => expandedGroups.has(id));
+
+  const toggleAll = useCallback(() => {
+    if (allExpanded) {
+      setExpandedGroups(new Set());
+    } else {
+      setExpandedGroups(new Set(multiRowGroupIds));
+    }
+  }, [allExpanded, multiRowGroupIds]);
 
   return (
     <div className="flex h-full flex-col">
@@ -81,10 +147,21 @@ export default function TableViewPage() {
           </div>
         ) : (
           <>
-            <p className="mb-3 text-sm text-gray-400">
-              {tableData.rows.length}{" "}
-              {tableData.rows.length === 1 ? "row" : "rows"}
-            </p>
+            <div className="mb-3 flex items-center gap-3">
+              <p className="text-sm text-gray-400">
+                {tableData.rows.length}{" "}
+                {tableData.rows.length === 1 ? "row" : "rows"}
+              </p>
+              {multiRowGroupIds.size > 0 && (
+                <button
+                  onClick={toggleAll}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                >
+                  <ChevronsUpDown className="h-3 w-3" />
+                  {allExpanded ? "Collapse all" : "Expand all"}
+                </button>
+              )}
+            </div>
             <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
               <table className="min-w-max divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -107,23 +184,80 @@ export default function TableViewPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {tableData.rows.map((row, rowIdx) => (
-                    <tr key={rowIdx} className="hover:bg-gray-50">
-                      {row.map((cell, colIdx) => (
-                        <td key={colIdx} className="px-4 py-2.5">
-                          <TableCell
-                            cell={cell}
-                            isFormula={
-                              tableData.columns[colIdx]?.kind === "formula"
-                            }
-                            onNavigate={(itemId) =>
-                              navigate(`/items/${itemId}`)
-                            }
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {groups.map((group) => {
+                    const isMulti = group.rows.length > 1 && group.seedId;
+                    const isExpanded =
+                      isMulti && expandedGroups.has(group.seedId!);
+                    const visibleRows = isMulti && !isExpanded
+                      ? [group.rows[0]]
+                      : group.rows;
+
+                    return visibleRows.map((row, rowIdx) => (
+                      <tr
+                        key={`${group.seedId ?? "null"}-${rowIdx}`}
+                        className="hover:bg-gray-50"
+                      >
+                        {row.map((cell, colIdx) => (
+                          <td
+                            key={colIdx}
+                            className={`px-4 py-2.5 ${
+                              isMulti && isExpanded && rowIdx > 0 && colIdx === 0
+                                ? "border-l-2 border-blue-200"
+                                : ""
+                            }`}
+                          >
+                            {colIdx === 0 && isMulti ? (
+                              <div className="flex items-center gap-1">
+                                {rowIdx === 0 ? (
+                                  <button
+                                    onClick={() =>
+                                      toggleGroup(group.seedId!)
+                                    }
+                                    className="flex shrink-0 items-center rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronRight className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="w-[22px] shrink-0" />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <TableCell
+                                    cell={cell}
+                                    isFormula={
+                                      tableData.columns[colIdx]?.kind ===
+                                      "formula"
+                                    }
+                                    onNavigate={(itemId) =>
+                                      navigate(`/items/${itemId}`)
+                                    }
+                                  />
+                                </div>
+                                {rowIdx === 0 && !isExpanded && (
+                                  <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-400">
+                                    +{group.rows.length - 1}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <TableCell
+                                cell={cell}
+                                isFormula={
+                                  tableData.columns[colIdx]?.kind === "formula"
+                                }
+                                onNavigate={(itemId) =>
+                                  navigate(`/items/${itemId}`)
+                                }
+                              />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ));
+                  })}
                 </tbody>
               </table>
             </div>

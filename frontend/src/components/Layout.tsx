@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Outlet, Link, useLocation, useMatch } from "react-router-dom";
+import { Outlet, Link, useLocation, useMatch, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import CompositionTree from "./CompositionTree";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import {
@@ -16,8 +17,11 @@ import {
   KeyRound,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
+  Vault,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
+import * as vaultsApi from "../api/vaults";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -33,17 +37,32 @@ const adminItems = [
 
 const superAdminItems = [
   { to: "/manage/users", icon: Users, label: "Users" },
+  { to: "/manage/vaults", icon: Vault, label: "Vaults" },
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, selectVault } = useAuth();
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showVaultDropdown, setShowVaultDropdown] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const itemMatch = useMatch("/items/:id");
   const editMatch = useMatch("/items/:id/edit");
   const showTree = !!itemMatch && !editMatch;
   const currentItemId = itemMatch?.params.id;
+
+  const { data: myVaults } = useQuery({
+    queryKey: ["my-vaults"],
+    queryFn: vaultsApi.getMyVaults,
+  });
+
+  const handleVaultSwitch = async (vaultId: string) => {
+    setShowVaultDropdown(false);
+    await selectVault(vaultId);
+    navigate("/");
+  };
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
@@ -63,6 +82,53 @@ export default function Layout() {
             {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
           </button>
         </div>
+
+        {/* Vault switcher */}
+        {!collapsed && user?.active_vault_name && (
+          <div className="relative border-b border-gray-200 px-3 py-2">
+            <button
+              onClick={() => setShowVaultDropdown((v) => !v)}
+              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-gray-100"
+            >
+              <span className="truncate font-medium text-gray-700">{user.active_vault_name}</span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            </button>
+            {showVaultDropdown && (
+              <div className="absolute left-2 right-2 top-full z-50 mt-1 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                {myVaults?.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleVaultSwitch(v.id)}
+                    className={`flex w-full items-center px-3 py-2 text-sm hover:bg-gray-100 ${
+                      v.id === user.active_vault ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                    }`}
+                  >
+                    {v.name}
+                  </button>
+                ))}
+                <div className="border-t border-gray-100 pt-1">
+                  <button
+                    onClick={() => { setShowVaultDropdown(false); navigate("/vaults/select"); }}
+                    className="flex w-full items-center px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
+                  >
+                    All vaults...
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {collapsed && user?.active_vault_name && (
+          <div className="border-b border-gray-200 px-2 py-2">
+            <button
+              onClick={() => navigate("/vaults/select")}
+              className="flex w-full justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              title={user.active_vault_name}
+            >
+              <Vault className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         <nav className="flex-1 overflow-y-auto p-2">
           <div className="space-y-1">
@@ -140,7 +206,7 @@ export default function Layout() {
               </h3>
             )}
             <div className="mt-1 space-y-1">
-              {[...adminItems, ...(user?.role === "admin" ? superAdminItems : [])].map((item) => {
+              {[...adminItems, ...(user?.is_site_admin ? superAdminItems : [])].map((item) => {
                 const active = location.pathname === item.to;
                 return (
                   <Link
@@ -187,7 +253,7 @@ export default function Layout() {
                 <p className="truncate text-sm font-medium text-gray-900">
                   {user?.username}
                 </p>
-                <p className="text-xs text-gray-500">{user?.role}</p>
+                <p className="text-xs text-gray-500">{user?.vault_role}{user?.is_site_admin ? " · site admin" : ""}</p>
               </div>
               <div className="flex gap-0.5">
                 <button

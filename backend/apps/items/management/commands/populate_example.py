@@ -23,6 +23,7 @@ from django.db import transaction
 from apps.items.models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType
 from apps.matrices.models import Matrix, MatrixColumn
 from apps.relations.models import ItemRelation, RelationType
+from apps.vaults.models import Vault, VaultMembership
 
 User = get_user_model()
 
@@ -111,6 +112,7 @@ class Command(BaseCommand):
             name=name,
             description=description,
             created_by=self._author,
+            vault=self._vault,
         )
         for position, col in enumerate(columns):
             if position == 0:
@@ -150,21 +152,32 @@ class Command(BaseCommand):
         DocumentTemplate.all_objects.all().hard_delete()
         CustomFieldDefinition.all_objects.all().hard_delete()
         ItemType.all_objects.all().hard_delete()
-        RelationType.all_objects.filter(is_builtin=False).hard_delete()
+        RelationType.all_objects.all().hard_delete()
         from apps.mailbox.models import MailboxArtifact
         MailboxArtifact.all_objects.all().hard_delete()
+        VaultMembership.all_objects.all().hard_delete()
+        Vault.all_objects.all().hard_delete()
         User.objects.all().delete()
         self.stdout.write("  Done.\n")
 
-        # Check built-in relation types exist
-        self._relations = {r.name: r for r in RelationType.objects.all()}
-        missing_rels = {"is_composed_of"} - self._relations.keys()
-        if missing_rels:
-            self.stderr.write(
-                f"Missing relation types: {missing_rels}\n"
-                "Run 'python manage.py seed_data' first."
-            )
-            return
+        # Create admin user and vault
+        admin = User.objects.create_superuser(
+            username="admin", email="admin@example.com", password="admin",
+            is_site_admin=True,
+        )
+        self._vault = Vault.objects.create(
+            name="AV System",
+            slug="av-system",
+            description="Autonomous Vehicle System example vault.",
+            created_by=admin,
+        )
+        # Vault.save() auto-creates built-in relation types (is_composed_of, traces_to)
+
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        admin.active_vault = self._vault
+        admin.save(update_fields=["active_vault"])
+
+        self._relations = {r.name: r for r in RelationType.objects.filter(vault=self._vault)}
 
         # Ensure is_composed_of has no source type constraint
         rt = self._relations["is_composed_of"]
@@ -194,6 +207,7 @@ class Command(BaseCommand):
         self._types = {}
         for name, slug, desc, icon in item_types:
             obj, created = ItemType.objects.get_or_create(
+                vault=self._vault,
                 slug=slug,
                 defaults={"name": name, "description": desc, "icon": icon},
             )
@@ -318,6 +332,7 @@ class Command(BaseCommand):
         ]
         for cr in custom_rels:
             obj, created = RelationType.objects.update_or_create(
+                vault=self._vault,
                 name=cr["name"],
                 defaults={
                     "kind": cr["kind"],
@@ -334,23 +349,18 @@ class Command(BaseCommand):
             self.stdout.write(f"  {tag} custom relation type: {cr['name']}")
 
         # ------------------------------------------------------------------
-        # Users
+        # Users — admin already created above, now create demo author
         # ------------------------------------------------------------------
-        User.objects.create_user(
-            username="admin",
-            email="admin@example.com",
-            password="admin1234",
-            role="admin",
-        )
-        self.stdout.write("Created user: admin / admin1234 (role: admin)\n")
-
         self._author = User.objects.create_user(
             username="demo",
             email="demo@example.com",
             password="demo1234",
-            role="editor",
         )
-        self.stdout.write("Created user: demo / demo1234 (role: editor)\n")
+        self._author.active_vault = self._vault
+        self._author.save(update_fields=["active_vault"])
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+        self.stdout.write("  Created user: admin / admin (site admin)")
+        self.stdout.write("  Created user: demo / demo1234 (vault role: editor)\n")
 
         # ------------------------------------------------------------------
         # Document templates

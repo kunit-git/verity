@@ -4,16 +4,20 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.items.models import Item, ItemVersion
+from apps.vaults.mixins import VaultScopedMixin
+from apps.vaults.permissions import HasVaultAccess
 from .models import ItemRelation, RelationType
 from .serializers import ItemRelationSerializer, RelationTypeSerializer
 
 
-class RelationTypeViewSet(viewsets.ModelViewSet):
-    queryset = RelationType.objects.filter(is_active=True).select_related(
-        "source_item_type", "target_item_type"
-    )
+class RelationTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     serializer_class = RelationTypeSerializer
-    permission_classes = [ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+
+    def get_queryset(self):
+        return RelationType.objects.filter(
+            is_active=True, vault=self.current_vault
+        ).select_related("source_item_type", "target_item_type")
 
     def destroy(self, request, *args, **kwargs):
         relation_type = self.get_object()
@@ -25,9 +29,9 @@ class RelationTypeViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class ItemRelationViewSet(viewsets.ModelViewSet):
+class ItemRelationViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     serializer_class = ItemRelationSerializer
-    permission_classes = [ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     filterset_fields = ["relation_type", "source", "target"]
 
@@ -38,7 +42,7 @@ class ItemRelationViewSet(viewsets.ModelViewSet):
             "source__item_type",
             "target",
             "target__item_type",
-        ).all()
+        ).filter(relation_type__vault=self.current_vault)
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
@@ -77,10 +81,10 @@ class ItemRelationViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class ItemNavigationView(viewsets.ViewSet):
+class ItemNavigationView(VaultScopedMixin, viewsets.ViewSet):
     """Returns navigation context for the spatial navigator."""
 
-    permission_classes = [ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
 
     @staticmethod
     def _resolve_ref(item, pinned_version=None, self_version=None, self_current_version=None, version_pinned=False):
@@ -121,12 +125,14 @@ class ItemNavigationView(viewsets.ViewSet):
 
     def retrieve(self, request, pk=None):
         try:
-            item = Item.objects.get(pk=pk)
+            item = Item.objects.get(pk=pk, item_type__vault=self.current_vault)
         except Item.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
         # Find all composition-kind relation types
-        comp_types = RelationType.objects.filter(kind=RelationType.Kind.COMPOSITION)
+        comp_types = RelationType.objects.filter(
+            kind=RelationType.Kind.COMPOSITION, vault=self.current_vault
+        )
 
         parent = None
         children = []

@@ -2,10 +2,35 @@ export interface User {
   id: number;
   username: string;
   email: string;
-  role: "viewer" | "editor" | "admin";
+  is_site_admin: boolean;
+  vault_role: "viewer" | "editor" | "admin" | null;
   date_joined: string;
   account_status: "active" | "locked" | "deleted";
   is_active: boolean;
+  active_vault: string | null;
+  active_vault_name: string | null;
+}
+
+export interface Vault {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  created_by: number;
+  created_by_username: string;
+  member_count: number;
+  created_at: string;
+}
+
+export interface VaultMembership {
+  id: string;
+  vault: string;
+  user: number;
+  username: string;
+  email: string;
+  role: string;
+  is_site_admin: boolean;
+  created_at: string;
 }
 
 export interface CustomFieldDefinition {

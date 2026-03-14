@@ -13,6 +13,13 @@ class MailboxArtifact(SoftDeleteModel):
         on_delete=models.PROTECT,
         related_name="mailbox_artifacts",
     )
+    vault = models.ForeignKey(
+        "vaults.Vault",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="mailbox_artifacts",
+    )
     filename = models.CharField(max_length=300)
     content = models.TextField()
     file_size = models.PositiveIntegerField()

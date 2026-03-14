@@ -7,6 +7,8 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.relations.models import ItemRelation, RelationType
+from apps.vaults.mixins import VaultScopedMixin
+from apps.vaults.permissions import HasVaultAccess
 from .models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType, ItemVersion
 from .serializers import (
     CustomFieldDefinitionSerializer,
@@ -19,13 +21,13 @@ from .serializers import (
 )
 
 
-class ItemTypeViewSet(viewsets.ModelViewSet):
-    permission_classes = [ReadOnlyOrEditor]
+class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
 
     def get_queryset(self):
         return (
             ItemType.objects
-            .filter(is_active=True)
+            .filter(is_active=True, vault=self.current_vault)
             .prefetch_related(
                 Prefetch("custom_fields", queryset=CustomFieldDefinition.objects.all())
             )
@@ -153,14 +155,16 @@ class ItemTypeViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ItemViewSet(viewsets.ModelViewSet):
-    permission_classes = [ReadOnlyOrEditor]
+class ItemViewSet(VaultScopedMixin, viewsets.ModelViewSet):
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
     filterset_fields = ["item_type__slug", "status", "created_by"]
     search_fields = ["title", "description"]
     ordering_fields = ["title", "created_at", "updated_at", "status"]
 
     def get_queryset(self):
-        return Item.objects.select_related("item_type", "created_by").all()
+        return Item.objects.select_related("item_type", "created_by").filter(
+            item_type__vault=self.current_vault
+        )
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -170,7 +174,9 @@ class ItemViewSet(viewsets.ModelViewSet):
         return ItemSerializer
 
     def _composition_types(self):
-        return RelationType.objects.filter(kind=RelationType.Kind.COMPOSITION)
+        return RelationType.objects.filter(
+            kind=RelationType.Kind.COMPOSITION, vault=self.current_vault
+        )
 
     def _annotate_suspect_links(self, qs):
         """Annotate items with whether they have any suspect trace relations.

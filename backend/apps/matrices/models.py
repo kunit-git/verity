@@ -9,6 +9,9 @@ from apps.core.models import SoftDeleteModel
 
 class Matrix(SoftDeleteModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vault = models.ForeignKey(
+        "vaults.Vault", on_delete=models.PROTECT, related_name="matrices",
+    )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     created_by = models.ForeignKey(

@@ -18,17 +18,56 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    active_vault_name = serializers.CharField(
+        source="active_vault.name", read_only=True, default=None
+    )
+    vault_role = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "date_joined"]
-        read_only_fields = ["id", "role", "date_joined"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_site_admin",
+            "vault_role",
+            "date_joined",
+            "active_vault",
+            "active_vault_name",
+        ]
+        read_only_fields = [
+            "id",
+            "is_site_admin",
+            "vault_role",
+            "date_joined",
+            "active_vault",
+            "active_vault_name",
+        ]
+
+    def get_vault_role(self, obj):
+        return obj.get_vault_role()
 
 
 class UserManagementSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "date_joined", "account_status", "is_active"]
-        read_only_fields = ["id", "username", "email", "date_joined", "account_status", "is_active"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_site_admin",
+            "date_joined",
+            "account_status",
+            "is_active",
+        ]
+        read_only_fields = [
+            "id",
+            "username",
+            "email",
+            "date_joined",
+            "account_status",
+            "is_active",
+        ]
 
 
 class ChangeOwnPasswordSerializer(serializers.Serializer):

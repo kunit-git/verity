@@ -6,13 +6,15 @@ from rest_framework.response import Response
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.items.models import CustomFieldDefinition, CustomFieldValue, Item
 from apps.relations.models import ItemRelation, RelationType
+from apps.vaults.mixins import VaultScopedMixin
+from apps.vaults.permissions import HasVaultAccess
 from .formula import evaluate, extract_references, parse_formula
 from .models import Matrix, MatrixColumn
 from .serializers import MatrixSerializer, MatrixWriteSerializer
 
 
-class MatrixViewSet(viewsets.ModelViewSet):
-    permission_classes = [ReadOnlyOrEditor]
+class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
 
     def get_queryset(self):
         return Matrix.objects.select_related("created_by").prefetch_related(
@@ -22,7 +24,7 @@ class MatrixViewSet(viewsets.ModelViewSet):
                     "seed_item_type", "seed_container", "relation_type"
                 ),
             ),
-        ).all()
+        ).filter(vault=self.current_vault)
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):

@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import SiteSettings
-from .permissions import IsAdmin
+from .permissions import IsSiteAdmin
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
@@ -21,7 +21,7 @@ class SiteSettingsView(APIView):
     def get_permissions(self):
         if self.request.method == "GET":
             return [permissions.AllowAny()]
-        return [IsAdmin()]
+        return [IsSiteAdmin()]
 
     def get(self, request):
         return Response(SiteSettingsSerializer(SiteSettings.get()).data)
@@ -65,7 +65,7 @@ class ChangeOwnPasswordView(APIView):
 
 
 class AdminChangePasswordView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
 
     def post(self, request, pk):
         user = generics.get_object_or_404(User, pk=pk)
@@ -81,9 +81,14 @@ class AdminChangePasswordView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class AdminCreateUserView(generics.CreateAPIView):
+    serializer_class = RegisterSerializer
+    permission_classes = [IsSiteAdmin]
+
+
 class UserListView(generics.ListAPIView):
     serializer_class = UserManagementSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
     pagination_class = None
 
     def get_queryset(self):
@@ -95,13 +100,13 @@ class UserListView(generics.ListAPIView):
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserManagementSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
     queryset = User.objects.all()
     http_method_names = ["get", "patch", "head", "options"]
 
 
 class LockUserView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
 
     def post(self, request, pk):
         user = generics.get_object_or_404(User, pk=pk)
@@ -122,7 +127,7 @@ class LockUserView(APIView):
 
 
 class UnlockUserView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
 
     def post(self, request, pk):
         user = generics.get_object_or_404(User, pk=pk)
@@ -138,7 +143,7 @@ class UnlockUserView(APIView):
 
 
 class DeleteUserView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsSiteAdmin]
 
     def post(self, request, pk):
         user = generics.get_object_or_404(User, pk=pk)

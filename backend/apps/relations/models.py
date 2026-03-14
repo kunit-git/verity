@@ -13,6 +13,9 @@ class RelationType(SoftDeleteModel):
         TRACE = "trace", "Trace"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vault = models.ForeignKey(
+        "vaults.Vault", on_delete=models.PROTECT, related_name="relation_types",
+    )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     name = models.CharField(max_length=100)
     forward_label = models.CharField(max_length=100)
@@ -46,7 +49,7 @@ class RelationType(SoftDeleteModel):
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["name"],
+                fields=["vault", "name"],
                 condition=models.Q(is_deleted=False),
                 name="unique_alive_relation_type_name",
             ),

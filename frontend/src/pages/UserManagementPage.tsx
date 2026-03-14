@@ -1,12 +1,9 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, KeyRound, Lock, LockOpen, Trash2 } from "lucide-react";
-import { getUsers, updateUserRole, getSiteSettings, updateSiteSettings, lockUser, unlockUser, deleteUser } from "../api/users";
+import { Users, KeyRound, Lock, LockOpen, Trash2, UserPlus } from "lucide-react";
+import { getUsers, updateUserSiteAdmin, getSiteSettings, updateSiteSettings, lockUser, unlockUser, deleteUser, createUser } from "../api/users";
 import { useAuth } from "../auth/AuthContext";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
-import type { User } from "../types";
-
-const ROLES: User["role"][] = ["viewer", "editor", "admin"];
 
 function MailboxLimitControl({
   value,
@@ -71,6 +68,106 @@ function MailboxLimitControl({
   );
 }
 
+function AddUserDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      onCreated();
+      onClose();
+    },
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: Record<string, string[]> } })?.response
+          ?.data;
+      if (detail) {
+        const first = Object.values(detail)[0];
+        setError(Array.isArray(first) ? first[0] : String(first));
+      } else {
+        setError("Failed to create user.");
+      }
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    mutation.mutate({ username, email, password });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Add User</h2>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              Username
+            </label>
+            <input
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              Password
+            </label>
+            <input
+              required
+              type="password"
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="mt-1 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={mutation.isPending}
+              className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {mutation.isPending ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function UserManagementPage() {
   const { user: me } = useAuth();
   const queryClient = useQueryClient();
@@ -78,15 +175,16 @@ export default function UserManagementPage() {
     id: number;
     username: string;
   } | null>(null);
+  const [showAddUser, setShowAddUser] = useState(false);
 
   const { data: users, isLoading, isError } = useQuery({
     queryKey: ["users"],
     queryFn: getUsers,
   });
 
-  const roleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: number; role: User["role"] }) =>
-      updateUserRole(id, role),
+  const siteAdminMutation = useMutation({
+    mutationFn: ({ id, is_site_admin }: { id: number; is_site_admin: boolean }) =>
+      updateUserSiteAdmin(id, is_site_admin),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   });
 
@@ -127,14 +225,23 @@ export default function UserManagementPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center gap-3">
-        <Users className="h-6 w-6 text-gray-400" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Manage user accounts and roles.
-          </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Users className="h-6 w-6 text-gray-400" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Manage user accounts and roles.
+            </p>
+          </div>
         </div>
+        <button
+          onClick={() => setShowAddUser(true)}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <UserPlus className="h-4 w-4" />
+          Add User
+        </button>
       </div>
 
       <div className="mt-6 flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
@@ -191,7 +298,7 @@ export default function UserManagementPage() {
                     Joined
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Role
+                    Site Admin
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                     Status
@@ -225,23 +332,26 @@ export default function UserManagementPage() {
                       {new Date(u.date_joined).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        value={u.role}
+                      <button
+                        role="switch"
+                        aria-checked={u.is_site_admin}
                         disabled={isSelf || isLocked}
-                        onChange={(e) =>
-                          roleMutation.mutate({
+                        onClick={() =>
+                          siteAdminMutation.mutate({
                             id: u.id,
-                            role: e.target.value as User["role"],
+                            is_site_admin: !u.is_site_admin,
                           })
                         }
-                        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                          u.is_site_admin ? "bg-blue-600" : "bg-gray-300"
+                        }`}
                       >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                            u.is_site_admin ? "translate-x-[18px]" : "translate-x-[2px]"
+                          }`}
+                        />
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       {isLocked ? (
@@ -319,6 +429,13 @@ export default function UserManagementPage() {
         <ChangePasswordDialog
           targetUser={passwordTarget}
           onClose={() => setPasswordTarget(null)}
+        />
+      )}
+
+      {showAddUser && (
+        <AddUserDialog
+          onClose={() => setShowAddUser(false)}
+          onCreated={() => queryClient.invalidateQueries({ queryKey: ["users"] })}
         />
       )}
     </div>

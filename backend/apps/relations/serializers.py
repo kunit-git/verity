@@ -30,6 +30,10 @@ class RelationTypeSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "is_builtin"]
 
+    def create(self, validated_data):
+        validated_data["vault"] = self.context["request"].user.active_vault
+        return super().create(validated_data)
+
 
 class ItemRelationSerializer(serializers.ModelSerializer):
     relation_type_name = serializers.CharField(

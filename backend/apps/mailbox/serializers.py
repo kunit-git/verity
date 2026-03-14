@@ -4,6 +4,10 @@ from .models import MailboxArtifact
 
 
 class MailboxArtifactSerializer(serializers.ModelSerializer):
+    vault_name = serializers.CharField(
+        source="vault.name", read_only=True, default=None
+    )
+
     class Meta:
         model = MailboxArtifact
         fields = [
@@ -12,6 +16,8 @@ class MailboxArtifactSerializer(serializers.ModelSerializer):
             "file_size",
             "content_type",
             "source_item",
+            "vault",
+            "vault_name",
             "created_at",
         ]
         read_only_fields = fields

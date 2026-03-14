@@ -54,6 +54,7 @@ class MailboxViewSet(viewsets.ModelViewSet):
 
         artifact = MailboxArtifact.objects.create(
             user=request.user,
+            vault=getattr(request.user, "active_vault", None),
             filename=filename,
             content=content,
             file_size=len(content.encode("utf-8")),

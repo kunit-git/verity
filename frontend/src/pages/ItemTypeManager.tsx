@@ -130,7 +130,7 @@ function ItemTypeCard({
     },
   });
 
-  const canDelete = user?.role !== "viewer" && itemType.item_count === 0;
+  const canDelete = user?.vault_role && user.vault_role !== "viewer" && itemType.item_count === 0;
   const deleteTitle =
     itemType.item_count > 0
       ? `Cannot delete: ${itemType.item_count} item${itemType.item_count !== 1 ? "s" : ""} of this type exist`
@@ -159,7 +159,7 @@ function ItemTypeCard({
             {itemType.item_count !== 1 ? "s" : ""}
           </span>
         </button>
-        {user?.role !== "viewer" && (
+        {user?.vault_role && user.vault_role !== "viewer" && (
           <button
             onClick={() => {
               if (canDelete && confirm(`Delete item type "${itemType.name}"?`))

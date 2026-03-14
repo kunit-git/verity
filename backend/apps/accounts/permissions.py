@@ -1,23 +1,24 @@
 from rest_framework.permissions import BasePermission
 
 
-class IsAdmin(BasePermission):
+class IsSiteAdmin(BasePermission):
+    """Site-level admin (vault CRUD, user management)."""
+
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == "admin"
+        return request.user.is_authenticated and request.user.is_site_admin
 
 
 class IsEditorOrAbove(BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ("editor", "admin")
+        return request.user.is_authenticated and request.user.get_vault_role() in (
+            "editor",
+            "admin",
+        )
 
 
 class IsViewerOrAbove(BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in (
-            "viewer",
-            "editor",
-            "admin",
-        )
+        return request.user.is_authenticated and request.user.get_vault_role() is not None
 
 
 class ReadOnlyOrEditor(BasePermission):
@@ -28,4 +29,4 @@ class ReadOnlyOrEditor(BasePermission):
             return False
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return True
-        return request.user.role in ("editor", "admin")
+        return request.user.get_vault_role() in ("editor", "admin")

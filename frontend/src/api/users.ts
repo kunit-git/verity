@@ -6,11 +6,11 @@ export async function getUsers(): Promise<User[]> {
   return data;
 }
 
-export async function updateUserRole(
+export async function updateUserSiteAdmin(
   id: number,
-  role: User["role"]
+  is_site_admin: boolean
 ): Promise<User> {
-  const { data } = await api.patch<User>(`/auth/users/${id}/`, { role });
+  const { data } = await api.patch<User>(`/auth/users/${id}/`, { is_site_admin });
   return data;
 }
 
@@ -47,6 +47,15 @@ export async function updateSiteSettings(
   patch: Partial<SiteSettings>
 ): Promise<SiteSettings> {
   const { data } = await api.patch<SiteSettings>("/auth/settings/", patch);
+  return data;
+}
+
+export async function createUser(payload: {
+  username: string;
+  email: string;
+  password: string;
+}): Promise<User> {
+  const { data } = await api.post<User>("/auth/users/create/", payload);
   return data;
 }
 

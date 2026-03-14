@@ -6,8 +6,10 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "../types";
 import * as authApi from "../api/auth";
+import * as vaultsApi from "../api/vaults";
 
 interface AuthContextType {
   user: User | null;
@@ -19,6 +21,7 @@ interface AuthContextType {
     password: string
   ) => Promise<void>;
   logout: () => void;
+  selectVault: (vaultId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -26,6 +29,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -62,10 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     authApi.logout();
     setUser(null);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
+
+  const selectVault = useCallback(
+    async (vaultId: string) => {
+      await vaultsApi.selectVault(vaultId);
+      const me = await authApi.getMe();
+      setUser(me);
+      queryClient.clear();
+    },
+    [queryClient]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, selectVault }}>
       {children}
     </AuthContext.Provider>
   );

@@ -84,6 +84,8 @@ export default function ItemCreatePage({ editId }: { editId?: string }) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: ["item", data.id] });
+      queryClient.invalidateQueries({ queryKey: ["versions", data.id] });
       queryClient.invalidateQueries({ queryKey: ["tree"] });
       queryClient.invalidateQueries({ queryKey: ["navigation"] });
       navigate(`/items/${data.id}`);

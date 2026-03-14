@@ -78,6 +78,7 @@ export default function ItemNavigator() {
   const generateMutation = useMutation({
     mutationFn: () => generateDocument(id!),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["mailbox"] });
       setGenerated(true);
       setTimeout(() => setGenerated(false), 2000);
     },
@@ -87,6 +88,8 @@ export default function ItemNavigator() {
     mutationFn: () => deleteItem(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
+      queryClient.invalidateQueries({ queryKey: ["tree"] });
+      queryClient.invalidateQueries({ queryKey: ["navigation"] });
       navigate("/items");
     },
   });

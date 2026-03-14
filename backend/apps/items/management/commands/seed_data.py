@@ -33,7 +33,7 @@ class Command(BaseCommand):
             },
         )
         if created:
-            admin.set_password("admin")
+            admin.set_password("admin282!")
             admin.save(update_fields=["password"])
             self.stdout.write("  Created: admin user (admin / admin)")
         else:

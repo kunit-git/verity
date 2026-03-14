@@ -354,7 +354,7 @@ class Command(BaseCommand):
         self._author = User.objects.create_user(
             username="demo",
             email="demo@example.com",
-            password="demo1234",
+            password="DEMOdemo123!",
         )
         self._author.active_vault = self._vault
         self._author.save(update_fields=["active_vault"])

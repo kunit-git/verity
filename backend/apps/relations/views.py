@@ -5,14 +5,14 @@ from rest_framework.response import Response
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.items.models import Item, ItemVersion
 from apps.vaults.mixins import VaultScopedMixin
-from apps.vaults.permissions import HasVaultAccess
+from apps.vaults.permissions import HasVaultAccess, VaultNotLocked
 from .models import ItemRelation, RelationType
 from .serializers import ItemRelationSerializer, RelationTypeSerializer
 
 
 class RelationTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     serializer_class = RelationTypeSerializer
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
 
     def get_queryset(self):
         return RelationType.objects.filter(
@@ -31,7 +31,7 @@ class RelationTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
 
 class ItemRelationViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     serializer_class = ItemRelationSerializer
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     filterset_fields = ["relation_type", "source", "target"]
 
@@ -84,7 +84,7 @@ class ItemRelationViewSet(VaultScopedMixin, viewsets.ModelViewSet):
 class ItemNavigationView(VaultScopedMixin, viewsets.ViewSet):
     """Returns navigation context for the spatial navigator."""
 
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
 
     @staticmethod
     def _resolve_ref(item, pinned_version=None, self_version=None, self_current_version=None, version_pinned=False):

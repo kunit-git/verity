@@ -18,6 +18,15 @@ class Vault(SoftDeleteModel):
         related_name="created_vaults",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    is_locked = models.BooleanField(default=False)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    locked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     class Meta:
         db_table = "vaults_vault"
@@ -109,3 +118,33 @@ class VaultMembership(SoftDeleteModel):
 
     def __str__(self):
         return f"{self.user} in {self.vault}"
+
+
+class VaultAuditLog(models.Model):
+    class Event(models.TextChoices):
+        VAULT_CREATED = "vault_created", "Vault Created"
+        MEMBER_ADDED = "member_added", "Member Added"
+        MEMBER_REMOVED = "member_removed", "Member Removed"
+        MEMBER_ROLE_CHANGED = "member_role_changed", "Member Role Changed"
+        VAULT_LOCKED = "vault_locked", "Vault Locked"
+        VAULT_UNLOCKED = "vault_unlocked", "Vault Unlocked"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vault = models.ForeignKey(
+        Vault, on_delete=models.PROTECT, related_name="audit_logs"
+    )
+    event = models.CharField(max_length=30, choices=Event.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    detail = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "vaults_vault_audit_log"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.event} on {self.vault} by {self.actor}"

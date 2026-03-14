@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Compass, ArrowRight } from "lucide-react";
+import { Compass, ArrowRight, Lock } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import * as vaultsApi from "../api/vaults";
 
@@ -66,7 +66,15 @@ export default function VaultSelectorPage() {
                 className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-60"
               >
                 <div>
-                  <p className="font-medium text-gray-900">{vault.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-900">{vault.name}</p>
+                    {vault.is_locked && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        <Lock className="h-3 w-3" />
+                        Locked
+                      </span>
+                    )}
+                  </div>
                   {vault.description && (
                     <p className="mt-0.5 text-sm text-gray-500">{vault.description}</p>
                   )}

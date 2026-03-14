@@ -13,6 +13,7 @@ import ItemTypeManager from "./pages/ItemTypeManager";
 import RelationTypeManager from "./pages/RelationTypeManager";
 import UserManagementPage from "./pages/UserManagementPage";
 import VaultManagementPage from "./pages/VaultManagementPage";
+import VaultAuditLogPage from "./pages/VaultAuditLogPage";
 import TableListPage from "./pages/TableListPage";
 import TableEditorPage from "./pages/TableEditorPage";
 import TableViewPage from "./pages/TableViewPage";
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/manage/templates" element={<DocumentTemplateManager />} />
             <Route path="/manage/users" element={<UserManagementPage />} />
             <Route path="/manage/vaults" element={<VaultManagementPage />} />
+            <Route path="/vaults/:id/audit-log" element={<VaultAuditLogPage />} />
             <Route path="/mailbox" element={<MailboxPage />} />
             <Route path="/tables" element={<TableListPage />} />
             <Route path="/tables/new" element={<TableEditorPage />} />

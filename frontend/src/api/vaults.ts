@@ -1,5 +1,5 @@
 import api from "./client";
-import type { Vault, VaultMembership } from "../types";
+import type { PaginatedResponse, Vault, VaultAuditLogEntry, VaultMembership } from "../types";
 
 export async function getMyVaults() {
   const { data } = await api.get<Vault[]>("/vaults/my/");
@@ -53,4 +53,22 @@ export async function updateVaultMemberRole(vaultId: string, membershipId: strin
 
 export async function removeVaultMember(vaultId: string, membershipId: string) {
   await api.delete(`/vaults/${vaultId}/members/${membershipId}/`);
+}
+
+export async function lockVault(id: string) {
+  const { data } = await api.post<{ detail: string }>(`/vaults/${id}/lock/`);
+  return data;
+}
+
+export async function unlockVault(id: string) {
+  const { data } = await api.post<{ detail: string }>(`/vaults/${id}/unlock/`);
+  return data;
+}
+
+export async function getVaultAuditLog(vaultId: string, page = 1) {
+  const { data } = await api.get<PaginatedResponse<VaultAuditLogEntry>>(
+    `/vaults/${vaultId}/audit-log/`,
+    { params: { page } }
+  );
+  return data;
 }

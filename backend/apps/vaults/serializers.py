@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Vault, VaultMembership
+from .models import Vault, VaultAuditLog, VaultMembership
 
 User = get_user_model()
 
@@ -9,6 +9,9 @@ User = get_user_model()
 class VaultSerializer(serializers.ModelSerializer):
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True
+    )
+    locked_by_username = serializers.CharField(
+        source="locked_by.username", read_only=True, default=None
     )
     member_count = serializers.SerializerMethodField()
 
@@ -22,9 +25,20 @@ class VaultSerializer(serializers.ModelSerializer):
             "created_by",
             "created_by_username",
             "member_count",
+            "is_locked",
+            "locked_at",
+            "locked_by",
+            "locked_by_username",
             "created_at",
         ]
-        read_only_fields = ["id", "created_by", "created_at"]
+        read_only_fields = [
+            "id",
+            "created_by",
+            "is_locked",
+            "locked_at",
+            "locked_by",
+            "created_at",
+        ]
 
     def get_member_count(self, obj):
         return VaultMembership.objects.filter(vault=obj).count()
@@ -43,6 +57,15 @@ class VaultMembershipSerializer(serializers.ModelSerializer):
         model = VaultMembership
         fields = ["id", "vault", "user", "username", "email", "role", "is_site_admin", "created_at"]
         read_only_fields = ["id", "vault", "created_at"]
+
+
+class VaultAuditLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source="actor.username", read_only=True)
+
+    class Meta:
+        model = VaultAuditLog
+        fields = ["id", "vault", "event", "actor", "actor_username", "detail", "created_at"]
+        read_only_fields = fields
 
 
 class SelectVaultSerializer(serializers.Serializer):

@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.relations.models import ItemRelation, RelationType
 from apps.vaults.mixins import VaultScopedMixin
-from apps.vaults.permissions import HasVaultAccess
+from apps.vaults.permissions import HasVaultAccess, VaultNotLocked
 from .models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType, ItemVersion
 from .serializers import (
     CustomFieldDefinitionSerializer,
@@ -22,7 +22,7 @@ from .serializers import (
 
 
 class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
 
     def get_queryset(self):
         return (
@@ -156,7 +156,7 @@ class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
 
 
 class ItemViewSet(VaultScopedMixin, viewsets.ModelViewSet):
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
     filterset_fields = ["item_type__slug", "status", "created_by"]
     search_fields = ["title", "description"]
     ordering_fields = ["title", "created_at", "updated_at", "status"]

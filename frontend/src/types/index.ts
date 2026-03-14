@@ -9,6 +9,7 @@ export interface User {
   is_active: boolean;
   active_vault: string | null;
   active_vault_name: string | null;
+  active_vault_locked: boolean;
 }
 
 export interface Vault {
@@ -19,6 +20,20 @@ export interface Vault {
   created_by: number;
   created_by_username: string;
   member_count: number;
+  is_locked: boolean;
+  locked_at: string | null;
+  locked_by: number | null;
+  locked_by_username: string | null;
+  created_at: string;
+}
+
+export interface VaultAuditLogEntry {
+  id: string;
+  vault: string;
+  event: string;
+  actor: number;
+  actor_username: string;
+  detail: Record<string, unknown>;
   created_at: string;
 }
 

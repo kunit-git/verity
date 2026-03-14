@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   ChevronDown,
   Vault,
+  Lock,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import * as vaultsApi from "../api/vaults";
@@ -99,11 +100,12 @@ export default function Layout() {
                   <button
                     key={v.id}
                     onClick={() => handleVaultSwitch(v.id)}
-                    className={`flex w-full items-center px-3 py-2 text-sm hover:bg-gray-100 ${
+                    className={`flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-gray-100 ${
                       v.id === user.active_vault ? "bg-blue-50 text-blue-700" : "text-gray-700"
                     }`}
                   >
-                    {v.name}
+                    <span>{v.name}</span>
+                    {v.is_locked && <Lock className="h-3 w-3 text-amber-500" />}
                   </button>
                 ))}
                 <div className="border-t border-gray-100 pt-1">
@@ -281,6 +283,12 @@ export default function Layout() {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
+        {user?.active_vault_locked && (
+          <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            <Lock className="h-4 w-4 shrink-0" />
+            This vault is locked. All data is read-only.
+          </div>
+        )}
         <Outlet />
       </main>
 

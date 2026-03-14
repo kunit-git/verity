@@ -7,14 +7,14 @@ from apps.accounts.permissions import ReadOnlyOrEditor
 from apps.items.models import CustomFieldDefinition, CustomFieldValue, Item
 from apps.relations.models import ItemRelation, RelationType
 from apps.vaults.mixins import VaultScopedMixin
-from apps.vaults.permissions import HasVaultAccess
+from apps.vaults.permissions import HasVaultAccess, VaultNotLocked
 from .formula import evaluate, extract_references, parse_formula
 from .models import Matrix, MatrixColumn
 from .serializers import MatrixSerializer, MatrixWriteSerializer
 
 
 class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
-    permission_classes = [HasVaultAccess, ReadOnlyOrEditor]
+    permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
 
     def get_queryset(self):
         return Matrix.objects.select_related("created_by").prefetch_related(

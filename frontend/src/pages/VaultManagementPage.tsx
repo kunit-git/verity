@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, UserPlus, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Trash2, UserPlus, X, Lock, Unlock, ClipboardList } from "lucide-react";
 import * as vaultsApi from "../api/vaults";
 import { getUsers } from "../api/users";
 import type { VaultMembership } from "../types";
@@ -44,6 +45,20 @@ export default function VaultManagementPage() {
 
   const deleteMutation = useMutation({
     mutationFn: vaultsApi.deleteVault,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+    },
+  });
+
+  const lockMutation = useMutation({
+    mutationFn: (id: string) => vaultsApi.lockVault(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
+    },
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (id: string) => vaultsApi.unlockVault(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-vaults"] });
     },
@@ -127,32 +142,72 @@ export default function VaultManagementPage() {
       ) : (
         <div className="space-y-3">
           {vaults?.map((vault) => (
-            <div key={vault.id} className="rounded-lg border border-gray-200 bg-white">
+            <div key={vault.id} className={`rounded-lg border bg-white ${vault.is_locked ? "border-amber-300" : "border-gray-200"}`}>
               <div className="flex items-center justify-between px-4 py-3">
                 <button
                   onClick={() => setExpandedVault(expandedVault === vault.id ? null : vault.id)}
                   className="flex-1 text-left"
                 >
-                  <p className="font-medium text-gray-900">{vault.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-900">{vault.name}</p>
+                    {vault.is_locked && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        <Lock className="h-3 w-3" />
+                        Locked
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-500">
                     {vault.member_count} member{vault.member_count !== 1 ? "s" : ""}
                     {vault.description && ` \u2014 ${vault.description}`}
                   </p>
                 </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`Delete vault "${vault.name}"?`)) {
-                      deleteMutation.mutate(vault.id);
-                    }
-                  }}
-                  className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                  title="Delete vault"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <Link
+                    to={`/vaults/${vault.id}/audit-log`}
+                    className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title="Audit log"
+                  >
+                    <ClipboardList className="h-4 w-4" />
+                  </Link>
+                  {vault.is_locked ? (
+                    <button
+                      onClick={() => unlockMutation.mutate(vault.id)}
+                      disabled={unlockMutation.isPending}
+                      className="rounded p-1.5 text-amber-500 hover:bg-amber-50 hover:text-amber-700"
+                      title="Unlock vault"
+                    >
+                      <Unlock className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Lock vault "${vault.name}"? All data will become read-only.`)) {
+                          lockMutation.mutate(vault.id);
+                        }
+                      }}
+                      disabled={lockMutation.isPending}
+                      className="rounded p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600"
+                      title="Lock vault"
+                    >
+                      <Lock className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete vault "${vault.name}"?`)) {
+                        deleteMutation.mutate(vault.id);
+                      }
+                    }}
+                    className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    title="Delete vault"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               {expandedVault === vault.id && (
-                <VaultMemberPanel vaultId={vault.id} />
+                <VaultMemberPanel vaultId={vault.id} isLocked={vault.is_locked} />
               )}
             </div>
           ))}
@@ -165,7 +220,7 @@ export default function VaultManagementPage() {
   );
 }
 
-function VaultMemberPanel({ vaultId }: { vaultId: string }) {
+function VaultMemberPanel({ vaultId, isLocked }: { vaultId: string; isLocked: boolean }) {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -217,13 +272,15 @@ function VaultMemberPanel({ vaultId }: { vaultId: string }) {
     <div className="border-t border-gray-200 px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
         <h4 className="text-sm font-medium text-gray-700">Members</h4>
-        <button
-          onClick={() => setShowAdd((v) => !v)}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
-        >
-          <UserPlus className="h-3.5 w-3.5" />
-          Add
-        </button>
+        {!isLocked && (
+          <button
+            onClick={() => setShowAdd((v) => !v)}
+            className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Add
+          </button>
+        )}
       </div>
 
       {showAdd && (
@@ -280,8 +337,8 @@ function VaultMemberPanel({ vaultId }: { vaultId: string }) {
                 )}
               </span>
               <div className="flex items-center gap-2">
-                {m.is_site_admin ? (
-                  <span className="px-1.5 py-0.5 text-xs text-gray-400">admin</span>
+                {m.is_site_admin || isLocked ? (
+                  <span className="px-1.5 py-0.5 text-xs text-gray-400">{m.is_site_admin ? "admin" : m.role}</span>
                 ) : (
                   <>
                     <select

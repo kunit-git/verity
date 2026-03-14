@@ -206,9 +206,9 @@ export default function TableViewPage() {
                                 : ""
                             }`}
                           >
-                            {colIdx === 0 && isMulti ? (
+                            {colIdx === 0 && multiRowGroupIds.size > 0 ? (
                               <div className="flex items-center gap-1">
-                                {rowIdx === 0 ? (
+                                {isMulti && rowIdx === 0 ? (
                                   <button
                                     onClick={() =>
                                       toggleGroup(group.seedId!)
@@ -236,7 +236,7 @@ export default function TableViewPage() {
                                     }
                                   />
                                 </div>
-                                {rowIdx === 0 && !isExpanded && (
+                                {isMulti && rowIdx === 0 && !isExpanded && (
                                   <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-400">
                                     +{group.rows.length - 1}
                                   </span>

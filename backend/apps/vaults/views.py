@@ -1,14 +1,29 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsSiteAdmin
-from .models import Vault, VaultMembership
-from .permissions import IsVaultAdmin
-from .serializers import VaultSerializer, VaultMembershipSerializer, SelectVaultSerializer
+from .models import Vault, VaultAuditLog, VaultMembership
+from .permissions import IsVaultAdmin, IsVaultAdminForVault
+from .serializers import (
+    VaultSerializer,
+    VaultMembershipSerializer,
+    VaultAuditLogSerializer,
+    SelectVaultSerializer,
+)
 
 User = get_user_model()
+
+
+def _log_audit(vault, event, actor, detail=None):
+    VaultAuditLog.objects.create(
+        vault=vault,
+        event=event,
+        actor=actor,
+        detail=detail or {},
+    )
 
 
 class VaultListCreateView(generics.ListCreateAPIView):
@@ -17,7 +32,11 @@ class VaultListCreateView(generics.ListCreateAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        return Vault.objects.select_related("created_by").all()
+        return Vault.objects.select_related("created_by", "locked_by").all()
+
+    def perform_create(self, serializer):
+        vault = serializer.save()
+        _log_audit(vault, VaultAuditLog.Event.VAULT_CREATED, self.request.user)
 
 
 class VaultDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -25,7 +44,7 @@ class VaultDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsSiteAdmin]
 
     def get_queryset(self):
-        return Vault.objects.select_related("created_by").all()
+        return Vault.objects.select_related("created_by", "locked_by").all()
 
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
@@ -40,8 +59,29 @@ class VaultMemberListView(generics.ListCreateAPIView):
             vault_id=self.kwargs["vault_id"]
         ).select_related("user")
 
+    def _check_vault_locked(self):
+        vault = Vault.objects.filter(pk=self.kwargs["vault_id"]).values("is_locked").first()
+        if vault and vault["is_locked"]:
+            return Response(
+                {"detail": "This vault is locked. No modifications are allowed."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
+    def create(self, request, *args, **kwargs):
+        err = self._check_vault_locked()
+        if err:
+            return err
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
-        serializer.save(vault_id=self.kwargs["vault_id"])
+        membership = serializer.save(vault_id=self.kwargs["vault_id"])
+        _log_audit(
+            membership.vault,
+            VaultAuditLog.Event.MEMBER_ADDED,
+            self.request.user,
+            {"user": membership.user.username, "role": membership.role},
+        )
 
 
 class VaultMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -69,21 +109,67 @@ class VaultMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
             )
         return None
 
+    def _check_vault_locked(self):
+        vault = Vault.objects.filter(pk=self.kwargs["vault_id"]).values("is_locked").first()
+        if vault and vault["is_locked"]:
+            return Response(
+                {"detail": "This vault is locked. No modifications are allowed."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
     def update(self, request, *args, **kwargs):
+        err = self._check_vault_locked()
+        if err:
+            return err
         membership = self.get_object()
         err = self._check_site_admin(membership)
         if err:
             return err
-        return super().update(request, *args, **kwargs)
+        old_role = membership.role
+        response = super().update(request, *args, **kwargs)
+        membership.refresh_from_db()
+        if membership.role != old_role:
+            _log_audit(
+                membership.vault,
+                VaultAuditLog.Event.MEMBER_ROLE_CHANGED,
+                request.user,
+                {
+                    "user": membership.user.username,
+                    "old_role": old_role,
+                    "new_role": membership.role,
+                },
+            )
+        return response
 
     def partial_update(self, request, *args, **kwargs):
+        err = self._check_vault_locked()
+        if err:
+            return err
         membership = self.get_object()
         err = self._check_site_admin(membership)
         if err:
             return err
-        return super().partial_update(request, *args, **kwargs)
+        old_role = membership.role
+        response = super().partial_update(request, *args, **kwargs)
+        membership.refresh_from_db()
+        if membership.role != old_role:
+            _log_audit(
+                membership.vault,
+                VaultAuditLog.Event.MEMBER_ROLE_CHANGED,
+                request.user,
+                {
+                    "user": membership.user.username,
+                    "old_role": old_role,
+                    "new_role": membership.role,
+                },
+            )
+        return response
 
     def destroy(self, request, *args, **kwargs):
+        err = self._check_vault_locked()
+        if err:
+            return err
         membership = self.get_object()
         err = self._check_site_admin(membership)
         if err:
@@ -97,7 +183,66 @@ class VaultMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
                     {"detail": "Cannot remove the last admin from a vault."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        return super().destroy(request, *args, **kwargs)
+        username = membership.user.username
+        vault = membership.vault
+        response = super().destroy(request, *args, **kwargs)
+        _log_audit(
+            vault,
+            VaultAuditLog.Event.MEMBER_REMOVED,
+            request.user,
+            {"user": username},
+        )
+        return response
+
+
+class VaultLockView(APIView):
+    permission_classes = [IsSiteAdmin | IsVaultAdminForVault]
+
+    def post(self, request, pk):
+        try:
+            vault = Vault.objects.get(pk=pk)
+        except Vault.DoesNotExist:
+            return Response({"detail": "Vault not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if vault.is_locked:
+            return Response({"detail": "Vault is already locked."}, status=status.HTTP_400_BAD_REQUEST)
+
+        vault.is_locked = True
+        vault.locked_at = timezone.now()
+        vault.locked_by = request.user
+        vault.save(update_fields=["is_locked", "locked_at", "locked_by"])
+        _log_audit(vault, VaultAuditLog.Event.VAULT_LOCKED, request.user)
+        return Response({"detail": "Vault locked."})
+
+
+class VaultUnlockView(APIView):
+    permission_classes = [IsSiteAdmin | IsVaultAdminForVault]
+
+    def post(self, request, pk):
+        try:
+            vault = Vault.objects.get(pk=pk)
+        except Vault.DoesNotExist:
+            return Response({"detail": "Vault not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not vault.is_locked:
+            return Response({"detail": "Vault is not locked."}, status=status.HTTP_400_BAD_REQUEST)
+
+        vault.is_locked = False
+        vault.locked_at = None
+        vault.locked_by = None
+        vault.save(update_fields=["is_locked", "locked_at", "locked_by"])
+        _log_audit(vault, VaultAuditLog.Event.VAULT_UNLOCKED, request.user)
+        return Response({"detail": "Vault unlocked."})
+
+
+class VaultAuditLogView(generics.ListAPIView):
+    serializer_class = VaultAuditLogSerializer
+    permission_classes = [IsSiteAdmin | IsVaultAdmin]
+
+    def get_queryset(self):
+        return VaultAuditLog.objects.filter(
+            vault_id=self.kwargs["vault_id"]
+        ).select_related("actor")
 
 
 class SelectVaultView(APIView):
@@ -135,8 +280,8 @@ class MyVaultsView(generics.ListAPIView):
 
     def get_queryset(self):
         if self.request.user.is_site_admin:
-            return Vault.objects.select_related("created_by").all()
+            return Vault.objects.select_related("created_by", "locked_by").all()
         vault_ids = VaultMembership.objects.filter(
             user=self.request.user
         ).values_list("vault_id", flat=True)
-        return Vault.objects.filter(id__in=vault_ids).select_related("created_by")
+        return Vault.objects.filter(id__in=vault_ids).select_related("created_by", "locked_by")

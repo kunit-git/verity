@@ -21,6 +21,9 @@ class UserSerializer(serializers.ModelSerializer):
     active_vault_name = serializers.CharField(
         source="active_vault.name", read_only=True, default=None
     )
+    active_vault_locked = serializers.BooleanField(
+        source="active_vault.is_locked", read_only=True, default=False
+    )
     vault_role = serializers.SerializerMethodField()
 
     class Meta:
@@ -34,6 +37,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "active_vault",
             "active_vault_name",
+            "active_vault_locked",
         ]
         read_only_fields = [
             "id",
@@ -42,6 +46,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "active_vault",
             "active_vault_name",
+            "active_vault_locked",
         ]
 
     def get_vault_role(self, obj):

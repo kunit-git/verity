@@ -10,7 +10,7 @@ Item types used:
   Requirement, Risk, Test Case, Failure Mode, Failure Cause
 Relation types:
   Built-in:  is_composed_of, traces_to
-  Custom:    verifies, derives_from, decomposed_to, mitigates, causes
+  Custom:    verifies, derives_from, refines, mitigates, causes
 
 Usage:
     python manage.py populate_example
@@ -85,10 +85,10 @@ class Command(BaseCommand):
         for target in targets:
             self._rel("mitigates", source, target)
 
-    def _decomposes(self, parent_req, *child_reqs):
-        """Shorthand: parent_req decomposed_to each child_req."""
+    def _refines(self, parent_req, *child_reqs):
+        """Shorthand: parent_req refines each child_req."""
         for child in child_reqs:
-            self._rel("decomposed_to", parent_req, child)
+            self._rel("refines", parent_req, child)
 
     def _causes(self, cause, *modes):
         """Shorthand: cause causes each failure mode."""
@@ -295,10 +295,10 @@ class Command(BaseCommand):
             },
             {
                 "kind": "composition",
-                "name": "decomposed_to",
-                "forward_label": "is decomposed to",
-                "reverse_label": "decomposes",
-                "description": "A high-level requirement is decomposed into lower-level sub-requirements that together fulfil it.",
+                "name": "refines",
+                "forward_label": "is refined by",
+                "reverse_label": "refines",
+                "description": "A high-level requirement is refined into lower-level sub-requirements that together fulfil it.",
                 "source_item_type": self._types["requirement"],
                 "target_item_type": self._types["requirement"],
             },
@@ -917,7 +917,7 @@ class Command(BaseCommand):
             priority="Medium", **{"verification-method": "Test"},
         )
 
-        self._decomposes(req_sys_perf, req_acquire, req_preprocess,
+        self._refines(req_sys_perf, req_acquire, req_preprocess,
                          req_detect, req_track, req_publish)
 
         # Decompose "System availability ≥ 99.9 %" into constituent
@@ -946,7 +946,7 @@ class Command(BaseCommand):
             priority="Critical", **{"verification-method": "Analysis"},
         )
 
-        self._decomposes(req_sys_avail, req_perc_avail, req_plan_avail,
+        self._refines(req_sys_avail, req_perc_avail, req_plan_avail,
                          req_actuation_avail)
 
         # ==============================================================
@@ -2016,8 +2016,8 @@ class Command(BaseCommand):
                     "seed_container": sys_req_spec,
                 },
                 {
-                    "label": "Decomposed To",
-                    "relation_name": "decomposed_to",
+                    "label": "Refined By",
+                    "relation_name": "refines",
                     "direction": MatrixColumn.Direction.OUTGOING,
                 },
                 {

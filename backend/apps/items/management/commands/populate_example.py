@@ -1,7 +1,7 @@
 """
 Management command: populate_example
 
-Wipes all user data and items, then populates a realistic Autonomous Vehicle
+Wipes only the "AV System" vault (if it exists), then populates a realistic Autonomous Vehicle
 System example organised around document deliverables — plans, specifications,
 FMEA analyses, risk assessments, and verification & validation reports.
 
@@ -139,43 +139,58 @@ class Command(BaseCommand):
     # Command entry point
     # ------------------------------------------------------------------
 
+    VAULT_SLUG = "av-system"
+
     @transaction.atomic
     def handle(self, *args, **options):
-        self.stdout.write("Wiping existing data...")
-        MatrixColumn.all_objects.all().hard_delete()
-        Matrix.all_objects.all().hard_delete()
-        ItemRelation.all_objects.all().hard_delete()
-        CustomFieldValue.all_objects.all().hard_delete()
         from apps.items.models import ItemVersion
-        ItemVersion.all_objects.all().hard_delete()
-        Item.all_objects.all().hard_delete()
-        DocumentTemplate.all_objects.all().hard_delete()
-        CustomFieldDefinition.all_objects.all().hard_delete()
-        ItemType.all_objects.all().hard_delete()
-        RelationType.all_objects.all().hard_delete()
         from apps.mailbox.models import MailboxArtifact
-        MailboxArtifact.all_objects.all().hard_delete()
-        VaultMembership.all_objects.all().hard_delete()
-        Vault.all_objects.all().hard_delete()
-        User.objects.all().delete()
-        self.stdout.write("  Done.\n")
 
-        # Create admin user and vault
-        admin = User.objects.create_superuser(
-            username="admin", email="admin@example.com", password="admin",
-            is_site_admin=True,
-        )
+        # Wipe only the AV System vault (if it exists)
+        old_vault = Vault.all_objects.filter(slug=self.VAULT_SLUG).first()
+        if old_vault:
+            self.stdout.write(f"Wiping vault '{old_vault.name}'...")
+            vault_types = ItemType.all_objects.filter(vault=old_vault)
+            vault_items = Item.all_objects.filter(item_type__vault=old_vault)
+            vault_field_defs = CustomFieldDefinition.all_objects.filter(item_type__vault=old_vault)
+
+            MatrixColumn.all_objects.filter(matrix__vault=old_vault).hard_delete()
+            Matrix.all_objects.filter(vault=old_vault).hard_delete()
+            ItemRelation.all_objects.filter(relation_type__vault=old_vault).hard_delete()
+            CustomFieldValue.all_objects.filter(field_definition__in=vault_field_defs).hard_delete()
+            ItemVersion.all_objects.filter(item__in=vault_items).hard_delete()
+            vault_items.hard_delete()
+            DocumentTemplate.all_objects.filter(item_type__in=vault_types).hard_delete()
+            vault_field_defs.hard_delete()
+            vault_types.hard_delete()
+            RelationType.all_objects.filter(vault=old_vault).hard_delete()
+            MailboxArtifact.all_objects.filter(vault=old_vault).hard_delete()
+            VaultMembership.all_objects.filter(vault=old_vault).hard_delete()
+            old_vault.hard_delete()
+            self.stdout.write("  Done.\n")
+        else:
+            self.stdout.write("No existing AV System vault found, creating fresh.\n")
+
+        # Ensure admin user exists
+        admin = User.objects.filter(username="admin").first()
+        if not admin:
+            admin = User.objects.create_superuser(
+                username="admin", email="admin@example.com", password="admin282!",
+                is_site_admin=True,
+            )
+
         self._vault = Vault.objects.create(
             name="AV System",
-            slug="av-system",
+            slug=self.VAULT_SLUG,
             description="Autonomous Vehicle System example vault.",
             created_by=admin,
         )
         # Vault.save() auto-creates built-in relation types (is_composed_of, traces_to)
 
         VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
-        admin.active_vault = self._vault
-        admin.save(update_fields=["active_vault"])
+        if not admin.active_vault_id:
+            admin.active_vault = self._vault
+            admin.save(update_fields=["active_vault"])
 
         self._relations = {r.name: r for r in RelationType.objects.filter(vault=self._vault)}
 

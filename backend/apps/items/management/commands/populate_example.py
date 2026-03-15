@@ -1,7 +1,7 @@
 """
 Management command: populate_example
 
-Wipes example vaults (if they exist), then populates three realistic examples:
+Wipes example vaults (if they exist), then populates four realistic examples:
 
 1. **AV System** — an Autonomous Vehicle System organised around document
    deliverables: plans, specifications, FMEA analyses, risk assessments,
@@ -16,6 +16,11 @@ Wipes example vaults (if they exist), then populates three realistic examples:
    programme following IEC 62304 (software lifecycle), ISO 14971 (risk
    management), IEC 60601-1 (general safety), and EU MDR / FDA 21 CFR 820,
    with emphasis on patient safety, biocompatibility, and cybersecurity.
+
+4. **Financial Risk Management** — a Trading Risk Platform for an investment
+   bank covering market risk, credit risk, operational risk, and model
+   validation following Basel III/IV, FRTB, BCBS 239, MiFID II, and
+   Dodd-Frank.
 
 Item types used (per vault):
   Project, Plan, Specification, Report, Analysis, Information,
@@ -42,7 +47,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Populate example vaults (AV System + Avionics FMS + Medical Device)"
+    help = "Populate example vaults (AV System + Avionics FMS + Medical Device + Financial Risk)"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -406,6 +411,7 @@ class Command(BaseCommand):
     AV_VAULT_SLUG = "av-system"
     AVIONICS_VAULT_SLUG = "avionics-fms"
     MEDICAL_VAULT_SLUG = "medical-device"
+    FINANCE_VAULT_SLUG = "finance-risk"
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -413,6 +419,7 @@ class Command(BaseCommand):
         self._wipe_vault(self.AV_VAULT_SLUG)
         self._wipe_vault(self.AVIONICS_VAULT_SLUG)
         self._wipe_vault(self.MEDICAL_VAULT_SLUG)
+        self._wipe_vault(self.FINANCE_VAULT_SLUG)
 
         # Ensure admin user exists
         admin = User.objects.filter(username="admin").first()
@@ -501,6 +508,30 @@ class Command(BaseCommand):
         self.stdout.write("Building Medical Device document-deliverable example...")
         self._build_medical()
         self.stdout.write(self.style.SUCCESS("  Medical Device vault complete."))
+
+        # ==============================================================
+        # VAULT 4 — Financial Risk Management
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("\nSetting up Financial Risk Management vault..."))
+
+        self._vault = Vault.objects.create(
+            name="Trading Risk Platform",
+            slug=self.FINANCE_VAULT_SLUG,
+            description=(
+                "Market-making and proprietary trading risk management platform "
+                "following Basel III/IV, FRTB, BCBS 239, MiFID II, and Dodd-Frank. "
+                "Covers market risk, credit risk, operational risk, and model validation."
+            ),
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+
+        self._setup_vault_schema(admin)
+
+        self.stdout.write("Building Financial Risk Management example...")
+        self._build_finance()
+        self.stdout.write(self.style.SUCCESS("  Financial Risk Management vault complete."))
 
         # ------------------------------------------------------------------
         # Summary
@@ -4970,6 +5001,1317 @@ class Command(BaseCommand):
             description=(
                 "Shows how system requirements are decomposed into "
                 "lower-level software requirements."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Refined By",
+                    "relation_name": "refines",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+    # ------------------------------------------------------------------
+    # Financial Risk Management example data
+    # ------------------------------------------------------------------
+
+    def _build_finance(self):
+        # ==============================================================
+        # TOP-LEVEL PROGRAMME
+        # ==============================================================
+        programme = self._item(
+            "project",
+            "TRP-4000 Trading Risk Platform",
+            "Top-level programme for the TRP-4000 trading risk management "
+            "platform. Covers market risk, credit risk, operational risk, "
+            "and model validation for an investment bank's trading desk. "
+            "Standards: Basel III/IV, FRTB, BCBS 239, MiFID II, Dodd-Frank.",
+            **{"standard-reference": "Basel III/IV, FRTB, BCBS 239, MiFID II, Dodd-Frank"},
+        )
+
+        # ==============================================================
+        # PLANS
+        # ==============================================================
+        model_risk_plan = self._item(
+            "plan",
+            "Model Risk Management Plan",
+            "Framework for model validation, governance, and independent "
+            "review per SR 11-7/SS1/19. Defines model tiering, validation "
+            "frequency, ongoing monitoring, and model risk reporting.",
+            **{"phase": "Approved",
+               "standard-reference": "SR 11-7, SS1/19, TRIM"},
+        )
+        mrp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes the model risk management framework for "
+            "all quantitative models used in the trading risk platform. It "
+            "ensures independent validation, ongoing monitoring, and governance "
+            "of models that impact capital calculations, risk limits, and "
+            "regulatory reporting.",
+        )
+        mrp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers all Tier 1 (material) and Tier 2 (significant) models "
+            "including VaR, ES, CVA/DVA/FVA, Greeks engines, stress testing "
+            "models, and regulatory capital calculators. Tier 3 models are "
+            "subject to self-assessment with periodic review.",
+        )
+        mrp_governance = self._item(
+            "information",
+            "Governance Structure",
+            "Model Risk Committee meets monthly to review validation findings, "
+            "approve new models, and assess model risk appetite. Independent "
+            "Model Validation team reports to CRO, not to front-office.",
+        )
+        self._compose(model_risk_plan, mrp_purpose, mrp_scope, mrp_governance)
+
+        market_risk_plan = self._item(
+            "plan",
+            "Market Risk Management Plan",
+            "VaR methodology, stress testing framework, limit hierarchy, and "
+            "FRTB compliance roadmap. Defines daily risk reporting, escalation "
+            "procedures, and back-testing requirements.",
+            **{"phase": "Approved",
+               "standard-reference": "Basel III CRR2, FRTB"},
+        )
+        mkrp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan defines the market risk measurement, monitoring, and "
+            "control framework for all trading book positions. It ensures "
+            "compliance with Basel III internal models approach and FRTB "
+            "standardised and internal models requirements.",
+        )
+        mkrp_methodology = self._item(
+            "information",
+            "Risk Measurement Methodology",
+            "Market risk is measured using historical simulation VaR (99%, 10-day) "
+            "for internal risk management and Expected Shortfall (97.5%, varying "
+            "liquidity horizons) for FRTB IMA. P&L attribution test and "
+            "backtesting determine desk eligibility for IMA.",
+        )
+        mkrp_limits = self._item(
+            "information",
+            "Limit Framework",
+            "Three-tier limit hierarchy: (1) firm-wide VaR limit set by Board, "
+            "(2) desk-level VaR and sensitivity limits set by CRO, (3) trader-level "
+            "notional and Greeks limits set by desk heads. All limits enforced "
+            "pre-trade with intraday monitoring.",
+        )
+        self._compose(market_risk_plan, mkrp_purpose, mkrp_methodology, mkrp_limits)
+
+        ops_risk_plan = self._item(
+            "plan",
+            "Operational Risk Management Plan",
+            "RCSA methodology, loss event tracking, KRI monitoring framework, "
+            "and scenario analysis for operational risk capital calculation.",
+            **{"phase": "Approved",
+               "standard-reference": "Basel III Pillar 2, BCBS 195"},
+        )
+        orp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes the operational risk framework for the "
+            "trading risk platform, covering risk and control self-assessment, "
+            "loss event capture, key risk indicator monitoring, and scenario "
+            "analysis for capital quantification.",
+        )
+        orp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers front-office trading operations, middle-office risk "
+            "management, technology infrastructure, and regulatory reporting. "
+            "Includes people risk, process risk, systems risk, and external "
+            "event risk across all asset classes.",
+        )
+        self._compose(ops_risk_plan, orp_purpose, orp_scope)
+
+        reg_reporting_plan = self._item(
+            "plan",
+            "Regulatory Reporting Plan",
+            "Common Reporting (COREP), Pillar 3 disclosure, trade reporting "
+            "under MiFIR/EMIR, and transaction reporting requirements.",
+            **{"phase": "Review",
+               "standard-reference": "CRR2, MiFIR, EMIR"},
+        )
+        rrp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan defines the regulatory reporting framework including "
+            "data sourcing, calculation methodology, quality assurance, and "
+            "submission procedures for all prudential and transaction reports.",
+        )
+        rrp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers COREP own funds and capital requirements, large exposures, "
+            "leverage ratio, liquidity (LCR/NSFR), Pillar 3 disclosures, "
+            "MiFIR transaction reporting, and EMIR trade reporting.",
+        )
+        self._compose(reg_reporting_plan, rrp_purpose, rrp_scope)
+
+        bc_plan = self._item(
+            "plan",
+            "Business Continuity Plan",
+            "DR/BC procedures for trading systems, recovery time objectives, "
+            "failover procedures, and crisis management for the risk platform.",
+            **{"phase": "Approved"},
+        )
+        bcp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan ensures continuity of critical trading risk functions "
+            "during disruptive events. Defines RTO/RPO targets, failover "
+            "procedures, and communication protocols.",
+        )
+        bcp_scenarios = self._item(
+            "information",
+            "Disruption Scenarios",
+            "Covers data centre failure, network outage, market data feed "
+            "loss, key person unavailability, cyber incident, and pandemic "
+            "scenarios. Each scenario has defined response procedures and "
+            "recovery playbooks.",
+        )
+        self._compose(bc_plan, bcp_purpose, bcp_scenarios)
+
+        data_gov_plan = self._item(
+            "plan",
+            "Data Governance Plan",
+            "Data lineage, quality controls, and BCBS 239 compliance for "
+            "risk data aggregation and reporting.",
+            **{"phase": "Approved",
+               "standard-reference": "BCBS 239"},
+        )
+        dgp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes data governance standards for risk data "
+            "aggregation and reporting, ensuring accuracy, completeness, "
+            "timeliness, and adaptability per BCBS 239 principles.",
+        )
+        dgp_lineage = self._item(
+            "information",
+            "Data Lineage Framework",
+            "End-to-end data lineage from trade capture through risk "
+            "calculation to regulatory reporting. Automated lineage tracking "
+            "with impact analysis for upstream changes.",
+        )
+        dgp_quality = self._item(
+            "information",
+            "Data Quality Controls",
+            "Automated data quality checks at each processing stage: "
+            "completeness, accuracy, timeliness, and consistency. Data "
+            "quality scorecards published daily with break resolution SLAs.",
+        )
+        self._compose(data_gov_plan, dgp_purpose, dgp_lineage, dgp_quality)
+
+        self._compose(programme, model_risk_plan, market_risk_plan,
+                       ops_risk_plan, reg_reporting_plan, bc_plan,
+                       data_gov_plan)
+
+        # ==============================================================
+        # SPECIFICATIONS
+        # ==============================================================
+        sys_req_spec = self._item(
+            "specification",
+            "System Requirements Specification",
+            "Functional and non-functional requirements for the TRP-4000 "
+            "trading risk management platform. Covers all risk calculation "
+            "engines, limit management, regulatory reporting, and data "
+            "infrastructure.",
+            **{"baseline": "SRS-BL-3"},
+        )
+        market_risk_spec = self._item(
+            "specification",
+            "Market Risk Engine Specification",
+            "Detailed specification for VaR models, Expected Shortfall "
+            "calculation, P&L attribution, Greeks computation, and stress "
+            "testing engine.",
+            **{"baseline": "MRE-BL-2"},
+        )
+        credit_risk_spec = self._item(
+            "specification",
+            "Credit Risk Engine Specification",
+            "Specification for CVA/DVA/FVA computation, counterparty "
+            "exposure profiling, wrong-way risk modelling, and collateral "
+            "management calculations.",
+            **{"baseline": "CRE-BL-1"},
+        )
+        reg_calc_spec = self._item(
+            "specification",
+            "Regulatory Calculation Specification",
+            "Capital charge calculations under SA-TB and IMA approaches, "
+            "Default Risk Charge (DRC), Residual Risk Add-On (RRAO), and "
+            "CVA capital charge.",
+            **{"baseline": "RCS-BL-2",
+               "standard-reference": "CRR2 Art. 325"},
+        )
+        data_arch_spec = self._item(
+            "specification",
+            "Data Architecture Specification",
+            "Trade data model, market data feed integration, risk factor "
+            "taxonomy, reference data management, and data warehouse "
+            "architecture.",
+            **{"baseline": "DAS-BL-1",
+               "standard-reference": "BCBS 239"},
+        )
+
+        self._compose(programme, sys_req_spec, market_risk_spec,
+                       credit_risk_spec, reg_calc_spec, data_arch_spec)
+
+        # ==============================================================
+        # ANALYSES
+        # ==============================================================
+        var_validation = self._item(
+            "analysis",
+            "Model Validation Report — VaR",
+            "Independent validation of the historical simulation VaR model "
+            "including backtesting analysis (Kupiec POF, Christoffersen "
+            "independence), P&L attribution test, and sensitivity analysis "
+            "to model parameters.",
+            **{"method": "Other"},
+        )
+        cva_validation = self._item(
+            "analysis",
+            "Model Validation Report — CVA",
+            "Validation of the Monte Carlo CVA/DVA model including "
+            "convergence analysis, wrong-way risk assessment, exposure "
+            "profile benchmarking, and hedging effectiveness evaluation.",
+            **{"method": "Other"},
+        )
+        ops_risk_assessment = self._item(
+            "analysis",
+            "Operational Risk Assessment",
+            "Risk and Control Self-Assessment across front-office, "
+            "middle-office, and technology functions. Key scenarios: "
+            "fat-finger trades, market data feed failures, model errors, "
+            "and regulatory reporting failures.",
+            **{"method": "FMEA"},
+        )
+        frtb_impact = self._item(
+            "analysis",
+            "FRTB Impact Analysis",
+            "Impact assessment of Fundamental Review of the Trading Book "
+            "rules on capital requirements. Includes desk-level P&L "
+            "attribution test results, SA vs IMA comparison, and "
+            "implementation gap analysis.",
+            **{"method": "Other"},
+        )
+
+        self._compose(programme, var_validation, cva_validation,
+                       ops_risk_assessment, frtb_impact)
+
+        # ==============================================================
+        # REPORTS
+        # ==============================================================
+        stress_report = self._item(
+            "report",
+            "Stress Testing Report",
+            "Results of regulatory and internal stress scenarios applied "
+            "to the current trading book. Includes historical replay "
+            "(2008 GFC, 2020 COVID, 2022 LDI crisis) and hypothetical "
+            "scenarios (rates shock, credit spread widening, FX dislocation).",
+            **{"report-date": "2025-12-15",
+               "status": "Final"},
+        )
+        model_inventory = self._item(
+            "report",
+            "Model Inventory Report",
+            "Complete inventory of quantitative models with Tier 1/2/3 "
+            "classification, validation status, model risk ratings, "
+            "last validation date, and identified limitations.",
+            **{"report-date": "2025-11-30",
+               "status": "Final"},
+        )
+        icaap = self._item(
+            "report",
+            "ICAAP Submission",
+            "Internal Capital Adequacy Assessment Process document for "
+            "regulatory submission. Covers Pillar 2A capital requirements, "
+            "stress testing capital adequacy, and capital planning.",
+            **{"report-date": "2026-01-15",
+               "status": "Draft"},
+        )
+        pillar3_report = self._item(
+            "report",
+            "Pillar 3 Disclosure Report",
+            "Public disclosure of risk metrics, capital ratios, risk "
+            "management practices, and remuneration policies per CRR2 "
+            "Part Eight requirements.",
+            **{"report-date": "2025-12-31",
+               "status": "Under Review"},
+        )
+
+        self._compose(programme, stress_report, model_inventory,
+                       icaap, pillar3_report)
+
+        # ==============================================================
+        # REQUIREMENTS — System Requirements Specification
+        # ==============================================================
+        req_var_compute = self._item(
+            "requirement",
+            "Portfolio VaR Computation",
+            "The platform shall compute portfolio VaR at 99% confidence "
+            "level within 15 minutes for up to 500,000 positions.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_realtime_pnl = self._item(
+            "requirement",
+            "Real-Time P&L Computation",
+            "The platform shall support real-time P&L computation with "
+            "latency not exceeding 500ms per position update.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_pretrade_limits = self._item(
+            "requirement",
+            "Pre-Trade Limit Enforcement",
+            "Risk limits shall be enforced pre-trade with sub-millisecond "
+            "latency for all asset classes.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_audit_trail = self._item(
+            "requirement",
+            "Limit Breach Audit Trail",
+            "The system shall maintain a complete audit trail of all limit "
+            "breaches, overrides, and approvals with timestamps, user IDs, "
+            "and justification text.",
+            **{"priority": "High",
+               "verification-method": "Inspection"},
+        )
+        req_reg_reports = self._item(
+            "requirement",
+            "Regulatory Report Generation",
+            "All regulatory reports shall be generated and submitted within "
+            "T+1 of the reporting date.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+
+        self._compose(sys_req_spec, req_var_compute, req_realtime_pnl,
+                       req_pretrade_limits, req_audit_trail, req_reg_reports)
+
+        # ==============================================================
+        # REQUIREMENTS — Market Risk Engine Specification
+        # ==============================================================
+        req_var_hist_sim = self._item(
+            "requirement",
+            "VaR Historical Simulation",
+            "VaR shall be calculated using historical simulation with a "
+            "minimum 2-year lookback period and 500 scenarios.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_es_frtb = self._item(
+            "requirement",
+            "Expected Shortfall — FRTB",
+            "Expected Shortfall shall be computed at 97.5% confidence for "
+            "FRTB compliance with liquidity-adjusted horizons per risk "
+            "factor category.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_greeks = self._item(
+            "requirement",
+            "Sensitivity Computation",
+            "The system shall compute sensitivities (delta, gamma, vega, "
+            "rho) for all linear and non-linear products across all "
+            "asset classes.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_stress_scenarios = self._item(
+            "requirement",
+            "Stress Scenario Framework",
+            "Stress scenarios shall include both historical (2008 GFC, "
+            "2020 COVID, 2022 LDI crisis) and hypothetical scenarios "
+            "with user-defined shock magnitudes.",
+            **{"priority": "High",
+               "verification-method": "Analysis"},
+        )
+
+        self._compose(market_risk_spec, req_var_hist_sim, req_es_frtb,
+                       req_greeks, req_stress_scenarios)
+
+        # ==============================================================
+        # REQUIREMENTS — Credit Risk Engine Specification
+        # ==============================================================
+        req_cva_mc = self._item(
+            "requirement",
+            "CVA Monte Carlo Simulation",
+            "CVA shall be computed using Monte Carlo simulation with a "
+            "minimum of 10,000 paths and variance reduction techniques.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_wwr = self._item(
+            "requirement",
+            "Wrong-Way Risk Modelling",
+            "Wrong-way risk shall be modelled with correlation between "
+            "counterparty credit quality and exposure, using copula-based "
+            "or structural approaches.",
+            **{"priority": "High",
+               "verification-method": "Analysis"},
+        )
+        req_exposure_profiles = self._item(
+            "requirement",
+            "Counterparty Exposure Profiles",
+            "Counterparty exposure profiles (EPE, ENE, PFE) shall be "
+            "generated for all netting sets with daily granularity out "
+            "to the longest maturity.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+
+        self._compose(credit_risk_spec, req_cva_mc, req_wwr,
+                       req_exposure_profiles)
+
+        # ==============================================================
+        # REQUIREMENTS — Regulatory Calculation Specification
+        # ==============================================================
+        req_sa_tb = self._item(
+            "requirement",
+            "SA-TB Capital Charges",
+            "Capital charges under SA-TB shall be computed per CRR2 "
+            "Articles 325a-325az, covering delta, vega, and curvature "
+            "risk charges across all risk classes.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_drc = self._item(
+            "requirement",
+            "Default Risk Charge",
+            "DRC charges shall reflect jump-to-default risk for all "
+            "credit-sensitive positions including bonds, CDS, and "
+            "securitisations.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_rrao = self._item(
+            "requirement",
+            "Residual Risk Add-On",
+            "RRAO shall capture residual risks not covered by delta, "
+            "vega, and curvature charges, including gap risk, correlation "
+            "risk, and behavioural risks.",
+            **{"priority": "Medium",
+               "verification-method": "Analysis"},
+        )
+
+        self._compose(reg_calc_spec, req_sa_tb, req_drc, req_rrao)
+
+        # ==============================================================
+        # REQUIREMENT DERIVATION
+        # ==============================================================
+        self._derives(req_var_hist_sim, req_var_compute)
+        self._derives(req_es_frtb, req_var_compute)
+        self._derives(req_greeks, req_realtime_pnl)
+        self._derives(req_cva_mc, req_var_compute)
+        self._derives(req_wwr, req_var_compute)
+        self._derives(req_exposure_profiles, req_pretrade_limits)
+        self._derives(req_sa_tb, req_reg_reports)
+        self._derives(req_drc, req_reg_reports)
+        self._derives(req_rrao, req_reg_reports)
+
+        # ==============================================================
+        # REQUIREMENT DECOMPOSITION (refines)
+        # ==============================================================
+        req_var_perf_gpu = self._item(
+            "requirement",
+            "GPU-Accelerated VaR Computation",
+            "The VaR engine shall leverage GPU acceleration to achieve "
+            "full portfolio revaluation within the 15-minute SLA for "
+            "portfolios exceeding 100,000 positions.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_var_incremental = self._item(
+            "requirement",
+            "Incremental VaR Computation",
+            "The system shall support incremental VaR calculation for "
+            "what-if analysis, computing the VaR impact of a proposed "
+            "trade within 5 seconds.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_limit_hierarchy = self._item(
+            "requirement",
+            "Hierarchical Limit Aggregation",
+            "Limits shall aggregate hierarchically from trader to desk "
+            "to business unit to firm level, with real-time utilisation "
+            "tracking at each level.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+
+        self._compose(sys_req_spec, req_var_perf_gpu, req_var_incremental,
+                       req_limit_hierarchy)
+        self._refines(req_var_compute, req_var_perf_gpu, req_var_incremental)
+        self._refines(req_pretrade_limits, req_limit_hierarchy)
+
+        # ==============================================================
+        # RISKS — Risk Register
+        # ==============================================================
+        risk_register = self._item(
+            "analysis",
+            "Risk Register",
+            "Consolidated risk register for the Trading Risk Platform "
+            "covering model risk, market risk, operational risk, technology "
+            "risk, regulatory risk, and cyber risk.",
+            **{"method": "Other"},
+        )
+        self._compose(programme, risk_register)
+
+        risk_var_underest = self._item(
+            "risk",
+            "Model Risk — VaR Underestimation",
+            "VaR model systematically underestimates tail risk due to "
+            "model specification error, insufficient lookback period, "
+            "or failure to capture regime changes. Results in inadequate "
+            "capital buffers and unexpected large losses.",
+            **{"severity": "Critical",
+               "likelihood": "Possible",
+               "mitigation": "Independent model validation, daily backtesting with "
+                             "traffic-light framework, regulatory multiplier buffer, "
+                             "supplementary stressed VaR calculation"},
+        )
+        risk_liquidity = self._item(
+            "risk",
+            "Liquidity Risk — Concentrated Positions",
+            "Large concentrated positions in illiquid instruments cannot "
+            "be unwound within the assumed liquidity horizon, leading to "
+            "realised losses exceeding VaR estimates.",
+            **{"severity": "High",
+               "likelihood": "Likely",
+               "mitigation": "Position concentration limits, liquidity horizons per "
+                             "risk factor, bid-ask spread monitoring, liquidity "
+                             "stress testing"},
+        )
+        risk_fat_finger = self._item(
+            "risk",
+            "Operational Risk — Fat-Finger Trade Entry",
+            "Erroneous trade entry with incorrect quantity, price, or "
+            "direction causes immediate market impact and P&L loss. "
+            "May trigger cascading limit breaches across desks.",
+            **{"severity": "High",
+               "likelihood": "Possible",
+               "mitigation": "Pre-trade limit checks, four-eyes principle for "
+                             "large trades, automated reasonableness checks, "
+                             "order size caps"},
+        )
+        risk_data_feed = self._item(
+            "risk",
+            "Technology Risk — Market Data Feed Failure",
+            "Primary market data feed failure causes stale prices in "
+            "risk calculations, leading to incorrect VaR, wrong limit "
+            "utilisation, and potentially missed limit breaches.",
+            **{"severity": "Critical",
+               "likelihood": "Unlikely",
+               "mitigation": "Dual feed providers, stale data detection with "
+                             "configurable staleness thresholds, automatic "
+                             "fallback to secondary feed"},
+        )
+        risk_frtb_gaps = self._item(
+            "risk",
+            "Regulatory Risk — FRTB Implementation Gaps",
+            "Incomplete or incorrect implementation of FRTB rules results "
+            "in regulatory capital miscalculation, potential supervisory "
+            "add-ons, and reputational damage.",
+            **{"severity": "High",
+               "likelihood": "Possible",
+               "mitigation": "Comprehensive gap analysis, phased implementation "
+                             "plan, regulatory dialogue, parallel running of old "
+                             "and new approaches"},
+        )
+        risk_large_exposure = self._item(
+            "risk",
+            "Counterparty Risk — Large Exposure Breach",
+            "Counterparty exposure exceeds regulatory large exposure "
+            "limit due to market movements or failed collateral calls, "
+            "resulting in regulatory breach notification.",
+            **{"severity": "Critical",
+               "likelihood": "Unlikely",
+               "mitigation": "Real-time exposure monitoring, early warning "
+                             "triggers at 80% of limit, automated collateral "
+                             "calls, close-out netting enforcement"},
+        )
+        risk_cyber = self._item(
+            "risk",
+            "Cyber Risk — Trading System Compromise",
+            "Unauthorised access to trading or risk systems enables "
+            "manipulation of positions, limits, or risk calculations. "
+            "Could result in undetected losses or data exfiltration.",
+            **{"severity": "Critical",
+               "likelihood": "Unlikely",
+               "mitigation": "Network segmentation, privileged access management, "
+                             "SOC monitoring, regular penetration testing, "
+                             "insider threat programme"},
+        )
+        risk_data_quality = self._item(
+            "risk",
+            "Data Quality Risk — Incorrect Position Data",
+            "Incorrect or incomplete position data propagates to risk "
+            "calculations, producing misleading risk metrics and "
+            "potentially masking limit breaches.",
+            **{"severity": "High",
+               "likelihood": "Possible",
+               "mitigation": "Automated reconciliation between trading and risk "
+                             "systems, data quality scorecards, break resolution "
+                             "SLAs, T+0 position certification"},
+        )
+
+        self._compose(risk_register, risk_var_underest, risk_liquidity,
+                       risk_fat_finger, risk_data_feed, risk_frtb_gaps,
+                       risk_large_exposure, risk_cyber, risk_data_quality)
+
+        # Link risks to challenged requirements
+        self._mitigates(risk_var_underest, req_var_compute, req_var_hist_sim)
+        self._mitigates(risk_liquidity, req_pretrade_limits)
+        self._mitigates(risk_fat_finger, req_pretrade_limits, req_audit_trail)
+        self._mitigates(risk_data_feed, req_realtime_pnl, req_var_compute)
+        self._mitigates(risk_frtb_gaps, req_sa_tb, req_es_frtb)
+        self._mitigates(risk_large_exposure, req_exposure_profiles)
+        self._mitigates(risk_data_quality, req_reg_reports)
+
+        # ==============================================================
+        # FAILURE MODES — Operational Risk Assessment
+        # ==============================================================
+        fm_var_low = self._item(
+            "failure-mode",
+            "VaR Model Produces Systematically Low Estimates",
+            "Model specification error or stale calibration causes VaR "
+            "to systematically underestimate tail risk. Backtesting "
+            "exceptions accumulate, potentially triggering regulatory "
+            "capital multiplier increase.",
+            **{"severity": "Critical"},
+        )
+        fm_stale_data = self._item(
+            "failure-mode",
+            "Market Data Feed Delivers Stale Prices",
+            "Primary data feed continues to deliver prices that are not "
+            "updating, without signalling an error. Stale prices propagate "
+            "through risk calculations, producing incorrect VaR, Greeks, "
+            "and limit utilisation figures.",
+            **{"severity": "High"},
+        )
+        fm_limit_bypass = self._item(
+            "failure-mode",
+            "Risk Limit Enforcement Bypassed During High Volatility",
+            "System overload during high-volatility market events causes "
+            "the pre-trade limit check service to time out, and trades "
+            "are routed through a bypass path without limit validation.",
+            **{"severity": "Critical"},
+        )
+        fm_netting_error = self._item(
+            "failure-mode",
+            "Incorrect Netting Set Assignment",
+            "Trades assigned to wrong netting sets due to master agreement "
+            "mapping errors, inflating or deflating counterparty exposure "
+            "calculations and regulatory capital.",
+            **{"severity": "High"},
+        )
+        fm_batch_timeout = self._item(
+            "failure-mode",
+            "Batch Risk Calculation Fails to Complete Before Market Open",
+            "End-of-day batch risk calculation exceeds the overnight "
+            "processing window, resulting in traders starting the day "
+            "without updated risk figures and limit utilisation.",
+            **{"severity": "High"},
+        )
+        fm_trade_booking = self._item(
+            "failure-mode",
+            "Trade Booking Error Propagates to Risk Calculations",
+            "Incorrect trade attributes (notional, maturity, strike) "
+            "entered in the booking system flow through to risk "
+            "calculations without detection, producing incorrect "
+            "risk metrics for the affected desk.",
+            **{"severity": "Medium"},
+        )
+
+        self._compose(ops_risk_assessment, fm_var_low, fm_stale_data,
+                       fm_limit_bypass, fm_netting_error, fm_batch_timeout,
+                       fm_trade_booking)
+
+        # Failure causes
+        fc_regime_change = self._item(
+            "failure-cause",
+            "Regime Change Not Captured in Lookback Window",
+            "Structural market regime change (e.g., shift from low-vol to "
+            "high-vol environment) occurs outside the VaR lookback window, "
+            "causing the model to underweight tail scenarios.",
+            **{"category": "Design"},
+        )
+        fc_vendor_outage = self._item(
+            "failure-cause",
+            "Primary Market Data Vendor Outage",
+            "Market data vendor experiences system failure but continues "
+            "to serve last known prices without error indication, causing "
+            "silent data staleness.",
+            **{"category": "Environmental"},
+        )
+        fc_concurrency = self._item(
+            "failure-cause",
+            "Concurrency Bottleneck Under Peak Load",
+            "Limit check microservice cannot scale horizontally fast enough "
+            "during market stress events, causing request queue overflow "
+            "and timeout-based bypass activation.",
+            **{"category": "Software"},
+        )
+        fc_manual_netting = self._item(
+            "failure-cause",
+            "Manual Netting Set Maintenance Process",
+            "Netting set assignments are maintained manually in a reference "
+            "data system, leading to stale or incorrect mappings when new "
+            "master agreements are negotiated.",
+            **{"category": "Human Error"},
+        )
+        fc_batch_capacity = self._item(
+            "failure-cause",
+            "Insufficient Batch Compute Capacity",
+            "Batch risk calculation infrastructure not scaled to handle "
+            "growing portfolio size, causing processing time to exceed "
+            "the overnight batch window.",
+            **{"category": "Design"},
+        )
+        fc_no_validation = self._item(
+            "failure-cause",
+            "Lack of Automated Trade Validation Rules",
+            "Booking system does not enforce automated reasonableness "
+            "checks on trade attributes, allowing obviously incorrect "
+            "values to pass through.",
+            **{"category": "Software"},
+        )
+
+        self._compose(ops_risk_assessment, fc_regime_change, fc_vendor_outage,
+                       fc_concurrency, fc_manual_netting, fc_batch_capacity,
+                       fc_no_validation)
+
+        self._causes(fc_regime_change, fm_var_low)
+        self._causes(fc_vendor_outage, fm_stale_data)
+        self._causes(fc_concurrency, fm_limit_bypass)
+        self._causes(fc_manual_netting, fm_netting_error)
+        self._causes(fc_batch_capacity, fm_batch_timeout)
+        self._causes(fc_no_validation, fm_trade_booking)
+
+        # Link failure modes to challenged requirements
+        self._mitigates(fm_var_low, req_var_compute)
+        self._mitigates(fm_stale_data, req_realtime_pnl)
+        self._mitigates(fm_limit_bypass, req_pretrade_limits)
+        self._mitigates(fm_netting_error, req_exposure_profiles)
+        self._mitigates(fm_batch_timeout, req_reg_reports)
+        self._mitigates(fm_trade_booking, req_audit_trail)
+
+        # ==============================================================
+        # THREATS & VULNERABILITIES — Cybersecurity
+        # ==============================================================
+        threat_assessment = self._item(
+            "analysis",
+            "Cybersecurity Threat Assessment",
+            "Threat assessment for the Trading Risk Platform covering "
+            "insider threats, external cyber threats, and vulnerabilities "
+            "in the risk calculation and reporting infrastructure.",
+            **{"method": "Other"},
+        )
+        self._compose(programme, threat_assessment)
+
+        threat_insider = self._item(
+            "threat",
+            "Insider Trading via Risk System Access",
+            "Authorised user with access to the risk system exploits "
+            "knowledge of firm-wide positions and risk limits to conduct "
+            "insider trading or front-running.",
+            **{"threat-level": "High",
+               "attack-vector": "Local",
+               "threat-agent": "Rogue trader"},
+        )
+        threat_limit_override = self._item(
+            "threat",
+            "Market Manipulation Through Limit Override",
+            "Authorised user with elevated access overrides risk limits "
+            "to build up positions beyond approved thresholds, potentially "
+            "concealing losses or manipulating markets.",
+            **{"threat-level": "High",
+               "attack-vector": "Local",
+               "threat-agent": "Authorised user with elevated access"},
+        )
+        threat_strategy_exfil = self._item(
+            "threat",
+            "Data Exfiltration of Proprietary Trading Strategies",
+            "State-sponsored actor or competitive intelligence operation "
+            "exfiltrates proprietary trading strategies, risk models, "
+            "and position data from the risk platform.",
+            **{"threat-level": "Critical",
+               "attack-vector": "Network",
+               "threat-agent": "State-sponsored actor / competitive intelligence"},
+        )
+        threat_ransomware = self._item(
+            "threat",
+            "Ransomware Targeting Risk Calculation Infrastructure",
+            "Organised cybercrime group deploys ransomware that encrypts "
+            "risk calculation infrastructure, preventing the firm from "
+            "computing risk metrics and regulatory reports.",
+            **{"threat-level": "Critical",
+               "attack-vector": "Network",
+               "threat-agent": "Organised cybercrime"},
+        )
+        threat_reg_manipulation = self._item(
+            "threat",
+            "Regulatory Data Manipulation",
+            "Internal actor manipulates regulatory reporting data to "
+            "conceal losses, reduce reported capital requirements, or "
+            "avoid regulatory scrutiny.",
+            **{"threat-level": "High",
+               "attack-vector": "Local",
+               "threat-agent": "Internal actor attempting to conceal losses"},
+        )
+
+        # Vulnerabilities
+        vuln_shared_accounts = self._item(
+            "vulnerability",
+            "Shared Privileged Accounts for Risk Engine Administration",
+            "Risk engine infrastructure administered via shared privileged "
+            "accounts without individual accountability, enabling "
+            "unattributable system changes.",
+            **{"severity": "High",
+               "attack-feasibility": "High",
+               "component": "Risk Engine Infrastructure"},
+        )
+        vuln_unencrypted_feeds = self._item(
+            "vulnerability",
+            "Unencrypted Market Data Feeds on Internal Network",
+            "Market data feeds transmitted unencrypted on the internal "
+            "network, allowing interception and potential manipulation "
+            "of pricing data.",
+            **{"severity": "Medium",
+               "attack-feasibility": "Medium",
+               "component": "Market Data Distribution"},
+        )
+        vuln_legacy_modules = self._item(
+            "vulnerability",
+            "Legacy Risk Calculation Modules Without Input Validation",
+            "Legacy risk calculation modules accept unvalidated inputs, "
+            "enabling injection of malformed data that could corrupt "
+            "risk calculations or cause denial of service.",
+            **{"severity": "High",
+               "attack-feasibility": "Medium",
+               "component": "Risk Calculation Engine"},
+        )
+        vuln_network_segmentation = self._item(
+            "vulnerability",
+            "Insufficient Segregation Between Trading and Risk Systems",
+            "Trading and risk systems share network segments without "
+            "adequate access controls, allowing lateral movement from "
+            "compromised trading terminals to risk infrastructure.",
+            **{"severity": "High",
+               "attack-feasibility": "High",
+               "component": "Network Architecture"},
+        )
+        vuln_weak_auth = self._item(
+            "vulnerability",
+            "Weak Authentication for Regulatory Reporting Portal",
+            "Regulatory reporting portal uses single-factor authentication, "
+            "enabling credential theft and unauthorised submission or "
+            "modification of regulatory data.",
+            **{"severity": "Medium",
+               "attack-feasibility": "High",
+               "component": "Regulatory Reporting"},
+        )
+
+        self._compose(threat_assessment, threat_insider, threat_limit_override,
+                       threat_strategy_exfil, threat_ransomware,
+                       threat_reg_manipulation,
+                       vuln_shared_accounts, vuln_unencrypted_feeds,
+                       vuln_legacy_modules, vuln_network_segmentation,
+                       vuln_weak_auth)
+
+        self._exploits(threat_insider, vuln_shared_accounts)
+        self._exploits(threat_limit_override, vuln_shared_accounts)
+        self._exploits(threat_strategy_exfil, vuln_network_segmentation, vuln_unencrypted_feeds)
+        self._exploits(threat_ransomware, vuln_legacy_modules, vuln_network_segmentation)
+        self._exploits(threat_reg_manipulation, vuln_weak_auth)
+
+        # Mitigations
+        mit_pam = self._item(
+            "mitigation",
+            "Privileged Access Management (PAM) for Risk Systems",
+            "Implement enterprise PAM solution for all risk system "
+            "administration. Individual accountability, session recording, "
+            "just-in-time access provisioning, and automatic credential "
+            "rotation.",
+            **{"control-type": "Preventive",
+               "implementation-status": "In Progress"},
+        )
+        mit_feed_encryption = self._item(
+            "mitigation",
+            "End-to-End Encryption for Market Data Feeds",
+            "Deploy TLS 1.3 encryption for all market data feeds on "
+            "internal network, with mutual authentication between "
+            "publisher and subscriber endpoints.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Planned"},
+        )
+        mit_input_validation = self._item(
+            "mitigation",
+            "Input Validation and Parameterised Queries for Risk Engine",
+            "Add comprehensive input validation, parameterised queries, "
+            "and schema enforcement to all risk calculation engine "
+            "interfaces. Include fuzzing in CI/CD pipeline.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Implemented"},
+        )
+        mit_microsegmentation = self._item(
+            "mitigation",
+            "Network Micro-Segmentation Between Trading and Risk Domains",
+            "Implement zero-trust network micro-segmentation between "
+            "trading, risk, and regulatory reporting zones with explicit "
+            "allow-listing of required data flows.",
+            **{"control-type": "Preventive",
+               "implementation-status": "In Progress"},
+        )
+        mit_mfa = self._item(
+            "mitigation",
+            "Multi-Factor Authentication for Regulatory Reporting",
+            "Enforce hardware-token MFA for all access to regulatory "
+            "reporting systems, with step-up authentication for "
+            "submission actions.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Implemented"},
+        )
+        mit_anomaly_detection = self._item(
+            "mitigation",
+            "Real-Time Anomaly Detection for Trading Pattern Surveillance",
+            "Deploy machine-learning-based anomaly detection for trading "
+            "patterns, limit override patterns, and data access patterns. "
+            "Alerts routed to compliance and security operations.",
+            **{"control-type": "Detective",
+               "implementation-status": "Verified"},
+        )
+
+        self._compose(threat_assessment, mit_pam, mit_feed_encryption,
+                       mit_input_validation, mit_microsegmentation,
+                       mit_mfa, mit_anomaly_detection)
+
+        self._mitigates(mit_pam, vuln_shared_accounts)
+        self._mitigates(mit_feed_encryption, vuln_unencrypted_feeds)
+        self._mitigates(mit_input_validation, vuln_legacy_modules)
+        self._mitigates(mit_microsegmentation, vuln_network_segmentation)
+        self._mitigates(mit_mfa, vuln_weak_auth)
+        self._mitigates(mit_anomaly_detection, risk_cyber, risk_fat_finger)
+
+        # ==============================================================
+        # TEST CASES
+        # ==============================================================
+        tc_var_accuracy = self._item(
+            "test-case",
+            "VaR 99% Confidence Level Accuracy",
+            "Verify VaR calculation accuracy against a known portfolio "
+            "with analytic solution.",
+            **{"test-steps": "1. Construct benchmark portfolio with known analytic VaR\n"
+                             "2. Load portfolio into risk engine\n"
+                             "3. Run historical simulation VaR calculation\n"
+                             "4. Compare result to analytic solution",
+               "expected-result": "Calculated VaR within 1% of analytic result"},
+        )
+        tc_var_perf = self._item(
+            "test-case",
+            "VaR Computation Performance",
+            "Verify full portfolio VaR computation completes within "
+            "the 15-minute SLA.",
+            **{"test-steps": "1. Load production-representative portfolio of 500,000 positions\n"
+                             "2. Trigger full revaluation VaR calculation\n"
+                             "3. Measure wall-clock time to completion\n"
+                             "4. Record resource utilisation metrics",
+               "expected-result": "Complete within 15 minutes with margin"},
+        )
+        tc_pnl_attrib = self._item(
+            "test-case",
+            "P&L Attribution Test",
+            "Verify risk-theoretical P&L explains actual P&L within "
+            "FRTB thresholds.",
+            **{"test-steps": "1. Calculate risk-theoretical P&L using sensitivities\n"
+                             "2. Obtain actual P&L from front-office system\n"
+                             "3. Compare for 5 consecutive trading days\n"
+                             "4. Compute Spearman correlation and Kolmogorov-Smirnov test",
+               "expected-result": "Unexplained P&L ratio < 10%, correlation > 0.8"},
+        )
+        tc_pretrade_latency = self._item(
+            "test-case",
+            "Pre-Trade Limit Check Latency",
+            "Verify pre-trade limit check latency under load.",
+            **{"test-steps": "1. Configure limit check service with production parameters\n"
+                             "2. Submit 10,000 order requests concurrently\n"
+                             "3. Measure response time for each request\n"
+                             "4. Calculate 99th percentile latency",
+               "expected-result": "99th percentile latency < 1ms"},
+        )
+        tc_stress_gfc = self._item(
+            "test-case",
+            "Stress Scenario — 2008 GFC Replay",
+            "Verify stress testing engine correctly applies historical "
+            "2008 GFC market moves.",
+            **{"test-steps": "1. Load current production portfolio\n"
+                             "2. Apply 2008 GFC historical scenario shocks\n"
+                             "3. Compute stressed P&L and capital impact\n"
+                             "4. Compare with expected results from reference model",
+               "expected-result": "P&L impact within 5% of reference model"},
+        )
+        tc_cva_convergence = self._item(
+            "test-case",
+            "CVA Monte Carlo Convergence",
+            "Verify CVA calculation convergence with increasing path count.",
+            **{"test-steps": "1. Select representative netting set\n"
+                             "2. Run CVA with 10,000 paths\n"
+                             "3. Run CVA with 50,000 paths\n"
+                             "4. Run CVA with 100,000 paths\n"
+                             "5. Compare results at each level",
+               "expected-result": "Results converge within 2% at 10,000 paths"},
+        )
+        tc_sa_tb = self._item(
+            "test-case",
+            "Regulatory Capital SA-TB Calculation",
+            "Verify SA-TB capital charge calculation against regulator's "
+            "benchmark portfolio.",
+            **{"test-steps": "1. Load BCBS benchmark portfolio\n"
+                             "2. Compute SA-TB capital charges\n"
+                             "3. Compare with regulator's reference results\n"
+                             "4. Investigate any discrepancies",
+               "expected-result": "Match regulator's reference calculation within 0.1%"},
+        )
+        tc_audit_trail = self._item(
+            "test-case",
+            "Audit Trail Completeness",
+            "Verify all limit breaches are captured in the audit trail.",
+            **{"test-steps": "1. Configure test limit framework with known thresholds\n"
+                             "2. Trigger 100 limit breaches across all limit types\n"
+                             "3. Query audit trail for breach records\n"
+                             "4. Verify completeness and data integrity",
+               "expected-result": "100% capture rate with timestamps, user IDs, and justifications"},
+        )
+        tc_data_failover = self._item(
+            "test-case",
+            "Market Data Failover",
+            "Verify automatic failover to secondary market data feed.",
+            **{"test-steps": "1. Establish normal operation with primary feed\n"
+                             "2. Simulate primary feed failure\n"
+                             "3. Measure time to automatic switch\n"
+                             "4. Verify data continuity and quality on secondary",
+               "expected-result": "Automatic switch to secondary feed within 5 seconds"},
+        )
+        tc_wwr = self._item(
+            "test-case",
+            "Wrong-Way Risk Detection",
+            "Verify system correctly identifies wrong-way risk in "
+            "constructed test portfolio.",
+            **{"test-steps": "1. Construct portfolio with known wrong-way risk exposure\n"
+                             "2. Run CVA with and without wrong-way risk modelling\n"
+                             "3. Verify system flags elevated exposure correlation\n"
+                             "4. Compare CVA uplift to expected range",
+               "expected-result": "System flags wrong-way risk, CVA uplift within expected range"},
+        )
+        tc_drc = self._item(
+            "test-case",
+            "FRTB DRC Calculation",
+            "Verify Default Risk Charge calculation for credit portfolio.",
+            **{"test-steps": "1. Load credit portfolio with known DRC\n"
+                             "2. Compute DRC using production engine\n"
+                             "3. Compare with reference implementation\n"
+                             "4. Validate issuer-level and portfolio-level results",
+               "expected-result": "Match reference implementation within 0.5%"},
+        )
+        tc_eod_batch = self._item(
+            "test-case",
+            "End-of-Day Batch Processing",
+            "Verify full EOD risk calculations complete within the "
+            "batch window.",
+            **{"test-steps": "1. Trigger full EOD batch with production-sized portfolio\n"
+                             "2. Monitor all calculation stages\n"
+                             "3. Verify all outputs generated correctly\n"
+                             "4. Measure total elapsed time",
+               "expected-result": "Complete within 4-hour batch window"},
+        )
+
+        # Compose test cases into reports
+        self._compose(stress_report, tc_stress_gfc)
+        self._compose(model_inventory, tc_var_accuracy, tc_cva_convergence)
+        self._compose(var_validation, tc_var_accuracy, tc_pnl_attrib)
+        self._compose(cva_validation, tc_cva_convergence, tc_wwr)
+
+        # Verification links
+        self._verifies(tc_var_accuracy, req_var_compute, req_var_hist_sim)
+        self._verifies(tc_var_perf, req_var_compute, req_var_perf_gpu)
+        self._verifies(tc_pnl_attrib, req_es_frtb)
+        self._verifies(tc_pretrade_latency, req_pretrade_limits)
+        self._verifies(tc_stress_gfc, req_stress_scenarios)
+        self._verifies(tc_cva_convergence, req_cva_mc)
+        self._verifies(tc_sa_tb, req_sa_tb)
+        self._verifies(tc_audit_trail, req_audit_trail)
+        self._verifies(tc_data_failover, req_realtime_pnl)
+        self._verifies(tc_wwr, req_wwr)
+        self._verifies(tc_drc, req_drc)
+        self._verifies(tc_eod_batch, req_reg_reports)
+
+        # ==============================================================
+        # TRACEABILITY MATRICES
+        # ==============================================================
+
+        # 1. Requirements Verification Matrix
+        self._matrix(
+            name="Requirements Verification Matrix",
+            description=(
+                "Traces system requirements to their verifying test cases — "
+                "the core verification traceability matrix."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 2. Market Risk Requirements Traceability
+        self._matrix(
+            name="Market Risk Requirements Traceability",
+            description=(
+                "Traces market risk requirements to parent system "
+                "requirements and verifying test cases."
+            ),
+            columns=[
+                {
+                    "label": "Market Risk Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": market_risk_spec,
+                },
+                {
+                    "label": "Derived From",
+                    "relation_name": "derives_from",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 3. Risk Register Matrix
+        self._matrix(
+            name="Risk Register Matrix",
+            description=(
+                "Traces identified risks to the requirements they challenge."
+            ),
+            columns=[
+                {
+                    "label": "Risk",
+                    "seed_item_type_slug": "risk",
+                    "seed_container": risk_register,
+                },
+                {
+                    "label": "Challenges Requirement",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 4. Operational FMEA Matrix
+        self._matrix(
+            name="Operational FMEA Matrix",
+            description=(
+                "Traces operational failure modes to their root causes."
+            ),
+            columns=[
+                {
+                    "label": "Failure Mode",
+                    "seed_item_type_slug": "failure-mode",
+                    "seed_container": ops_risk_assessment,
+                },
+                {
+                    "label": "Caused By",
+                    "relation_name": "causes",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 5. Cybersecurity Threat Matrix
+        self._matrix(
+            name="Cybersecurity Threat Matrix",
+            description=(
+                "Traces threats to exploited vulnerabilities and "
+                "their mitigations."
+            ),
+            columns=[
+                {
+                    "label": "Threat",
+                    "seed_item_type_slug": "threat",
+                    "seed_container": threat_assessment,
+                },
+                {
+                    "label": "Exploits Vulnerability",
+                    "relation_name": "exploits",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Mitigations",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 6. Model Validation Traceability
+        self._matrix(
+            name="Model Validation Traceability",
+            description=(
+                "Traces regulatory calculation requirements to parent "
+                "requirements and verifying test cases."
+            ),
+            columns=[
+                {
+                    "label": "Regulatory Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": reg_calc_spec,
+                },
+                {
+                    "label": "Derived From",
+                    "relation_name": "derives_from",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 7. Capital Requirements Decomposition
+        self._matrix(
+            name="Capital Requirements Decomposition",
+            description=(
+                "Shows how system requirements are decomposed into "
+                "lower-level requirements and their verification."
             ),
             columns=[
                 {

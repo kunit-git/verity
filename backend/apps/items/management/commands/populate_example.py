@@ -1,16 +1,24 @@
 """
 Management command: populate_example
 
-Wipes only the "AV System" vault (if it exists), then populates a realistic Autonomous Vehicle
-System example organised around document deliverables — plans, specifications,
-FMEA analyses, risk assessments, and verification & validation reports.
+Wipes example vaults (if they exist), then populates two realistic examples:
 
-Item types used:
+1. **AV System** — an Autonomous Vehicle System organised around document
+   deliverables: plans, specifications, FMEA analyses, risk assessments,
+   and verification & validation reports.
+
+2. **Avionics FMS** — a Flight Management System development programme
+   following DO-178C, ARP4754A, and ARP4761, including system & software
+   requirements, functional hazard assessment, FMEA, verification, and
+   DO-326A security assessment.
+
+Item types used (per vault):
   Project, Plan, Specification, Report, Analysis, Information,
-  Requirement, Risk, Test Case, Failure Mode, Failure Cause
+  Requirement, Risk, Test Case, Failure Mode, Failure Cause,
+  Threat, Vulnerability, Mitigation
 Relation types:
   Built-in:  is_composed_of, traces_to
-  Custom:    verifies, derives_from, refines, mitigates, causes
+  Custom:    verifies, derives_from, refines, mitigates, causes, exploits
 
 Usage:
     python manage.py populate_example
@@ -23,13 +31,13 @@ from django.db import transaction
 from apps.items.models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType
 from apps.matrices.models import Matrix, MatrixColumn
 from apps.relations.models import ItemRelation, RelationType
-from apps.vaults.models import Vault, VaultMembership
+from apps.vaults.models import Vault, VaultAuditLog, VaultMembership
 
 User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Wipe all data and populate an Autonomous Vehicle document-deliverable example"
+    help = "Populate example vaults (AV System + Avionics FMS)"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -136,18 +144,15 @@ class Command(BaseCommand):
         return matrix
 
     # ------------------------------------------------------------------
-    # Command entry point
+    # Vault lifecycle helpers
     # ------------------------------------------------------------------
 
-    VAULT_SLUG = "av-system"
-
-    @transaction.atomic
-    def handle(self, *args, **options):
+    def _wipe_vault(self, slug):
+        """Wipe a single vault and all its data (if it exists)."""
         from apps.items.models import ItemVersion
         from apps.mailbox.models import MailboxArtifact
 
-        # Wipe only the AV System vault (if it exists)
-        old_vault = Vault.all_objects.filter(slug=self.VAULT_SLUG).first()
+        old_vault = Vault.all_objects.filter(slug=slug).first()
         if old_vault:
             self.stdout.write(f"Wiping vault '{old_vault.name}'...")
             vault_types = ItemType.all_objects.filter(vault=old_vault)
@@ -165,33 +170,20 @@ class Command(BaseCommand):
             vault_types.hard_delete()
             RelationType.all_objects.filter(vault=old_vault).hard_delete()
             MailboxArtifact.all_objects.filter(vault=old_vault).hard_delete()
+            VaultAuditLog.objects.filter(vault=old_vault).delete()
             VaultMembership.all_objects.filter(vault=old_vault).hard_delete()
             old_vault.hard_delete()
             self.stdout.write("  Done.\n")
         else:
-            self.stdout.write("No existing AV System vault found, creating fresh.\n")
+            self.stdout.write(f"No existing '{slug}' vault found, creating fresh.\n")
 
-        # Ensure admin user exists
-        admin = User.objects.filter(username="admin").first()
-        if not admin:
-            admin = User.objects.create_superuser(
-                username="admin", email="admin@example.com", password="admin282!",
-                is_site_admin=True,
-            )
-
-        self._vault = Vault.objects.create(
-            name="AV System",
-            slug=self.VAULT_SLUG,
-            description="Autonomous Vehicle System example vault.",
-            created_by=admin,
-        )
-        # Vault.save() auto-creates built-in relation types (is_composed_of, traces_to)
-
-        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
-        if not admin.active_vault_id:
-            admin.active_vault = self._vault
-            admin.save(update_fields=["active_vault"])
-
+    def _setup_vault_schema(self, admin):
+        """
+        Create item types, custom fields, custom relation types, and
+        document templates for ``self._vault``.  Populates ``self._types``
+        and ``self._relations``.
+        """
+        # Built-in relation types already created by Vault.save()
         self._relations = {r.name: r for r in RelationType.objects.filter(vault=self._vault)}
 
         # Ensure is_composed_of has no source type constraint
@@ -200,9 +192,7 @@ class Command(BaseCommand):
         rt.target_item_type = None
         rt.save(update_fields=["source_item_type", "target_item_type"])
 
-        # ------------------------------------------------------------------
-        # Item types & custom fields
-        # ------------------------------------------------------------------
+        # -- Item types ---------------------------------------------------
         item_types = [
             ("Project", "project", "A top-level project grouping all deliverables.", "briefcase"),
             ("Plan", "plan", "A planning document such as a development plan, risk management plan, or verification plan.", "clipboard-list"),
@@ -230,44 +220,32 @@ class Command(BaseCommand):
             status = "Created" if created else "Exists"
             self.stdout.write(f"  {status}: ItemType '{name}'")
 
+        # -- Custom fields ------------------------------------------------
         custom_fields = [
-            # Project
             ("project", "Standard Reference", "standard-reference", "text", False, {}),
-            # Plan
             ("plan", "Standard Reference", "standard-reference", "text", False, {}),
             ("plan", "Phase", "phase", "choice", False, {"choices": ["Draft", "Review", "Approved", "Superseded"]}),
-            # Specification
             ("specification", "Standard Reference", "standard-reference", "text", False, {}),
             ("specification", "Baseline", "baseline", "text", False, {}),
-            # Report
             ("report", "Report Date", "report-date", "date", False, {}),
             ("report", "Status", "report-status", "choice", False, {"choices": ["Draft", "Under Review", "Final", "Superseded"]}),
-            # Analysis
             ("analysis", "Method", "method", "choice", False, {"choices": ["FMEA", "FTA", "HAZOP", "SOTIF", "HARA", "Other"]}),
             ("analysis", "Standard Reference", "standard-reference", "text", False, {}),
-            # Requirement
             ("requirement", "Priority", "priority", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
             ("requirement", "Verification Method", "verification-method", "choice", False, {"choices": ["Test", "Analysis", "Inspection", "Demonstration"]}),
-            # Risk
             ("risk", "Severity", "severity", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
             ("risk", "Likelihood", "likelihood", "choice", False, {"choices": ["Rare", "Unlikely", "Possible", "Likely", "Almost Certain"]}),
             ("risk", "Mitigation", "mitigation", "text", False, {}),
-            # Test Case
             ("test-case", "Test Steps", "test-steps", "text", False, {}),
             ("test-case", "Expected Result", "expected-result", "text", False, {}),
-            # Failure Mode
             ("failure-mode", "Severity", "severity", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
-            # Failure Cause
             ("failure-cause", "Category", "category", "choice", False, {"choices": ["Design", "Manufacturing", "Environmental", "Human Error", "Software"]}),
-            # Threat
             ("threat", "Threat Level", "threat-level", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
             ("threat", "Attack Vector", "attack-vector", "choice", False, {"choices": ["Network", "Adjacent", "Local", "Physical"]}),
             ("threat", "Threat Agent", "threat-agent", "text", False, {}),
-            # Vulnerability
             ("vulnerability", "Severity", "severity", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
             ("vulnerability", "Attack Feasibility", "attack-feasibility", "choice", False, {"choices": ["Low", "Medium", "High", "Very High"]}),
             ("vulnerability", "Component", "component", "text", False, {}),
-            # Mitigation
             ("mitigation", "Control Type", "control-type", "choice", False, {"choices": ["Preventive", "Detective", "Corrective", "Deterrent"]}),
             ("mitigation", "Implementation Status", "implementation-status", "choice", False, {"choices": ["Planned", "In Progress", "Implemented", "Verified"]}),
         ]
@@ -286,9 +264,7 @@ class Command(BaseCommand):
             status = "Created" if created else "Exists"
             self.stdout.write(f"  {status}: CustomField '{type_slug}.{name}'")
 
-        # ------------------------------------------------------------------
-        # Custom (non-built-in) relation types
-        # ------------------------------------------------------------------
+        # -- Custom relation types ----------------------------------------
         custom_rels = [
             {
                 "kind": "trace",
@@ -363,23 +339,7 @@ class Command(BaseCommand):
             tag = "Created" if created else "Updated"
             self.stdout.write(f"  {tag} custom relation type: {cr['name']}")
 
-        # ------------------------------------------------------------------
-        # Users — admin already created above, now create demo author
-        # ------------------------------------------------------------------
-        self._author = User.objects.create_user(
-            username="demo",
-            email="demo@example.com",
-            password="DEMOdemo123!",
-        )
-        self._author.active_vault = self._vault
-        self._author.save(update_fields=["active_vault"])
-        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
-        self.stdout.write("  Created user: admin / admin (site admin)")
-        self.stdout.write("  Created user: demo / demo1234 (vault role: editor)\n")
-
-        # ------------------------------------------------------------------
-        # Document templates
-        # ------------------------------------------------------------------
+        # -- Document templates -------------------------------------------
         self.stdout.write("Seeding document templates...")
         doc_templates = [
             (
@@ -434,14 +394,99 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"  Seeded: DocumentTemplate for '{type_slug}'")
 
+    # ------------------------------------------------------------------
+    # Command entry point
+    # ------------------------------------------------------------------
+
+    AV_VAULT_SLUG = "av-system"
+    AVIONICS_VAULT_SLUG = "avionics-fms"
+
+    @transaction.atomic
+    def handle(self, *args, **options):
+        # Wipe example vaults
+        self._wipe_vault(self.AV_VAULT_SLUG)
+        self._wipe_vault(self.AVIONICS_VAULT_SLUG)
+
+        # Ensure admin user exists
+        admin = User.objects.filter(username="admin").first()
+        if not admin:
+            admin = User.objects.create_superuser(
+                username="admin", email="admin@example.com", password="admin282!",
+                is_site_admin=True,
+            )
+
+        # Create demo author (shared across vaults)
+        User.objects.filter(username="demo").delete()
+        self._author = User.objects.create_user(
+            username="demo",
+            email="demo@example.com",
+            password="DEMOdemo123!",
+        )
+        self.stdout.write("  Created user: admin / admin (site admin)")
+        self.stdout.write("  Created user: demo / DEMOdemo123! (vault role: editor)\n")
+
+        # ==============================================================
+        # VAULT 1 — AV System
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("Setting up AV System vault..."))
+
+        self._vault = Vault.objects.create(
+            name="AV System",
+            slug=self.AV_VAULT_SLUG,
+            description="Autonomous Vehicle System example vault.",
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+        admin.active_vault = self._vault
+        admin.save(update_fields=["active_vault"])
+        self._author.active_vault = self._vault
+        self._author.save(update_fields=["active_vault"])
+
+        self._setup_vault_schema(admin)
+
         self.stdout.write("Building Autonomous Vehicle document-deliverable example...")
         self._build()
-        self.stdout.write(self.style.SUCCESS(
-            "\nDone. Register any account at /register to review and edit the example."
-        ))
+        self.stdout.write(self.style.SUCCESS("  AV System vault complete."))
 
+        # ==============================================================
+        # VAULT 2 — Avionics FMS
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("\nSetting up Avionics FMS vault..."))
+
+        self._vault = Vault.objects.create(
+            name="Avionics FMS",
+            slug=self.AVIONICS_VAULT_SLUG,
+            description=(
+                "Flight Management System development programme example vault, "
+                "following DO-178C, ARP4754A, ARP4761, and DO-326A."
+            ),
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+
+        self._setup_vault_schema(admin)
+
+        self.stdout.write("Building Avionics FMS document-deliverable example...")
+        self._build_avionics()
+        self.stdout.write(self.style.SUCCESS("  Avionics FMS vault complete."))
+
+        # ------------------------------------------------------------------
+        # Summary
+        # ------------------------------------------------------------------
+        n_items = Item.objects.count()
+        n_rels = ItemRelation.objects.count()
+        n_matrices = Matrix.objects.count()
+        self.stdout.write(f"\n  Items created    : {n_items}")
+        self.stdout.write(f"  Relations created: {n_rels}")
+        self.stdout.write(f"  Matrices created : {n_matrices}")
+
+        self.stdout.write(self.style.SUCCESS(
+            "\nDone. Register any account at /register to review and edit the examples."
+        ))
     # ------------------------------------------------------------------
-    # Example data
+    # AV System example data
     # ------------------------------------------------------------------
 
     def _build(self):
@@ -2043,27 +2088,1342 @@ class Command(BaseCommand):
             ],
         )
 
-        # ------------------------------------------------------------------
-        # Summary
-        # ------------------------------------------------------------------
-        n_items = Item.objects.count()
-        n_rels = ItemRelation.objects.count()
-        n_matrices = Matrix.objects.count()
-        self.stdout.write(f"\n  Items created    : {n_items}")
-        self.stdout.write(f"  Relations created: {n_rels}")
-        self.stdout.write(f"  Matrices created : {n_matrices}")
-        self.stdout.write(f"\n  Item types used:")
-        from django.db.models import Count
-        for row in (
-            Item.objects.values("item_type__name")
-            .annotate(n=Count("id"))
-            .order_by("item_type__name")
-        ):
-            self.stdout.write(f"    {row['item_type__name']:20s} {row['n']}")
-        self.stdout.write(f"\n  Relation types used:")
-        for row in (
-            ItemRelation.objects.values("relation_type__name")
-            .annotate(n=Count("id"))
-            .order_by("relation_type__name")
-        ):
-            self.stdout.write(f"    {row['relation_type__name']:25s} {row['n']}")
+    # ------------------------------------------------------------------
+    # Avionics FMS example data
+    # ------------------------------------------------------------------
+
+    def _build_avionics(self):
+        # ==============================================================
+        # TOP-LEVEL PROGRAMME
+        # ==============================================================
+        programme = self._item(
+            "project",
+            "FMS-3000 Flight Management System",
+            "Development programme for the FMS-3000 flight management system, "
+            "a DAL A/B avionics unit providing lateral and vertical navigation, "
+            "performance computation, and flight planning for Part 25 transport "
+            "category aircraft.",
+            **{"standard-reference": "ARP4754A, DO-178C, DO-254, DO-326A"},
+        )
+
+        # ==============================================================
+        # PLANS
+        # ==============================================================
+        sys_dev_plan = self._item(
+            "plan",
+            "System Development Plan",
+            "Defines the system-level development process for the FMS-3000 "
+            "including requirements capture, allocation to hardware and "
+            "software, integration, and certification liaison activities "
+            "per ARP4754A.",
+            **{"phase": "Approved",
+               "standard-reference": "ARP4754A §5"},
+        )
+        sw_dev_plan = self._item(
+            "plan",
+            "Software Development Plan",
+            "Describes the software life cycle processes, standards, tools, "
+            "and environment for the FMS-3000 application software. Covers "
+            "planning, requirements, design, coding, integration, and "
+            "verification per DO-178C objectives for DAL A software.",
+            **{"phase": "Approved",
+               "standard-reference": "DO-178C §11.1"},
+        )
+        sw_ver_plan = self._item(
+            "plan",
+            "Software Verification Plan",
+            "Defines the verification strategy, methods, tools, and "
+            "environment for demonstrating that the FMS-3000 software "
+            "satisfies its requirements and DO-178C objectives including "
+            "structural coverage analysis.",
+            **{"phase": "Approved",
+               "standard-reference": "DO-178C §11.3"},
+        )
+        safety_plan = self._item(
+            "plan",
+            "Safety Assessment Plan",
+            "Describes the safety assessment process, methods, and schedule "
+            "for the FMS-3000. Covers Functional Hazard Assessment, "
+            "Preliminary System Safety Assessment, System Safety Assessment, "
+            "and Common Cause Analysis per ARP4761.",
+            **{"phase": "Approved",
+               "standard-reference": "ARP4761"},
+        )
+        hw_dev_plan = self._item(
+            "plan",
+            "Hardware Development Plan",
+            "Describes the hardware design assurance process for the FMS "
+            "processor module, I/O boards, and display controller per "
+            "DO-254. Covers planning, requirements capture, conceptual "
+            "design, detailed design, and verification.",
+            **{"phase": "Review",
+               "standard-reference": "DO-254 §10.1"},
+        )
+
+        self._compose(programme, sys_dev_plan, sw_dev_plan, sw_ver_plan,
+                       safety_plan, hw_dev_plan)
+
+        # ==============================================================
+        # PLAN SECTIONS (Information items)
+        # ==============================================================
+
+        # -- System Development Plan sections --
+        sdp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes the system-level development process "
+            "for the FMS-3000 flight management system. It serves as the "
+            "primary reference for all engineering activities from "
+            "requirements capture through certification.",
+        )
+        sdp_scope = self._item(
+            "information",
+            "Scope",
+            "Covers the FMS computer unit (LRU), its interfaces to "
+            "ARINC 429/629 avionics buses, ARINC 661 display system, "
+            "GNSS receivers, and inertial reference units. Does not cover "
+            "airframe integration or airline-specific operational procedures.",
+        )
+        sdp_lifecycle = self._item(
+            "information",
+            "Development Lifecycle",
+            "The programme follows the ARP4754A V-model with defined "
+            "review gates at each phase: System Requirements Review (SRR), "
+            "Preliminary Design Review (PDR), Critical Design Review (CDR), "
+            "and First Article Inspection (FAI). Software development "
+            "within each phase follows DO-178C processes.",
+        )
+        sdp_cert = self._item(
+            "information",
+            "Certification Liaison",
+            "Certification activities follow FAA Order 8110.49 and EASA "
+            "CS-25. Stage of Involvement (SOI) reviews are planned at "
+            "SOI #1 (planning), SOI #2 (development), SOI #3 (verification), "
+            "and SOI #4 (final certification). DER/CVE involvement is "
+            "required for all DAL A functions.",
+        )
+        self._compose(sys_dev_plan, sdp_purpose, sdp_scope, sdp_lifecycle,
+                       sdp_cert)
+
+        # -- Software Development Plan sections --
+        swdp_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan defines the software life cycle processes for the "
+            "FMS-3000 application software classified as DAL A under "
+            "DO-178C. It addresses all objectives in tables A-1 through A-10.",
+        )
+        swdp_standards = self._item(
+            "information",
+            "Software Development Standards",
+            "Coding standard: MISRA C:2012 with DO-178C supplement.\n"
+            "Design standard: UML-based architectural modelling with formal "
+            "interface definitions.\n"
+            "Requirements standard: EARS (Easy Approach to Requirements "
+            "Syntax) for unambiguous natural-language requirements.",
+        )
+        swdp_environment = self._item(
+            "information",
+            "Software Development Environment",
+            "Host platform: Linux workstations with qualified cross-compiler "
+            "(Tool Qualification TQL-5 per DO-330).\n"
+            "Target platform: PowerPC-based FMS processor module.\n"
+            "Configuration management: Git with qualified branching model.\n"
+            "Requirements management: Verity tool suite.",
+        )
+        self._compose(sw_dev_plan, swdp_purpose, swdp_standards, swdp_environment)
+
+        # -- Safety Assessment Plan sections --
+        sap_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan defines the safety assessment activities for the "
+            "FMS-3000, ensuring that potential failure conditions are "
+            "identified, classified, and mitigated to acceptable levels.",
+        )
+        sap_methods = self._item(
+            "information",
+            "Safety Assessment Methods",
+            "The following methods are employed per ARP4761:\n"
+            "• Functional Hazard Assessment (FHA) — identifies failure "
+            "conditions and assigns severity classifications\n"
+            "• Preliminary System Safety Assessment (PSSA) — derives safety "
+            "requirements from the FHA using fault trees\n"
+            "• System Safety Assessment (SSA) — verifies that safety "
+            "requirements are met through FMEA and analysis of the "
+            "implemented design\n"
+            "• Common Cause Analysis (CCA) — assesses vulnerability to "
+            "common-mode failures, zonal hazards, and particular risks",
+        )
+        self._compose(safety_plan, sap_purpose, sap_methods)
+
+        # ==============================================================
+        # SPECIFICATIONS
+        # ==============================================================
+        sys_req_spec = self._item(
+            "specification",
+            "System Requirements Document",
+            "Captures all system-level functional and performance requirements "
+            "for the FMS-3000, allocated from aircraft-level requirements and "
+            "derived from safety analysis.",
+            **{"baseline": "SRD-BL-4",
+               "standard-reference": "ARP4754A §5.3"},
+        )
+        sw_hlr_spec = self._item(
+            "specification",
+            "Software High-Level Requirements",
+            "Software requirements derived from system requirements and "
+            "safety requirements for the FMS-3000 application software. "
+            "These are the primary basis for software design and "
+            "verification per DO-178C §5.1.",
+            **{"baseline": "SHLR-BL-3",
+               "standard-reference": "DO-178C §11.8"},
+        )
+        sw_llr_spec = self._item(
+            "specification",
+            "Software Low-Level Requirements",
+            "Detailed software design requirements that directly drive "
+            "source code implementation. Derived from high-level "
+            "requirements and architectural design decisions.",
+            **{"baseline": "SLLR-BL-2",
+               "standard-reference": "DO-178C §11.9"},
+        )
+        hw_req_spec = self._item(
+            "specification",
+            "Hardware Requirements Specification",
+            "Requirements for the FMS processor module, I/O interface "
+            "boards, and power supply unit derived from system requirements "
+            "and safety analysis.",
+            **{"baseline": "HRS-BL-1",
+               "standard-reference": "DO-254 §5.1"},
+        )
+
+        self._compose(programme, sys_req_spec, sw_hlr_spec, sw_llr_spec,
+                       hw_req_spec)
+
+        # ==============================================================
+        # SAFETY ANALYSES
+        # ==============================================================
+        fha = self._item(
+            "analysis",
+            "Functional Hazard Assessment",
+            "Identifies failure conditions of the FMS-3000 at the aircraft "
+            "level and classifies each by severity (Catastrophic, Hazardous, "
+            "Major, Minor, No Safety Effect) per AC 25.1309.",
+            **{"method": "HARA",
+               "standard-reference": "ARP4761 §4, AC 25.1309-1A"},
+        )
+        pssa = self._item(
+            "analysis",
+            "Preliminary System Safety Assessment",
+            "Derives safety requirements from the FHA using fault tree "
+            "analysis and reliability modelling. Determines required DAL "
+            "for each function and establishes quantitative safety targets.",
+            **{"method": "FTA",
+               "standard-reference": "ARP4761 §5"},
+        )
+        ssa = self._item(
+            "analysis",
+            "System Safety Assessment",
+            "Verifies that the implemented FMS-3000 design meets all "
+            "safety requirements derived in the PSSA. Uses bottom-up FMEA "
+            "and updated fault trees to confirm residual failure "
+            "probabilities are within budget.",
+            **{"method": "FMEA",
+               "standard-reference": "ARP4761 §6, IEC 60812"},
+        )
+        cca = self._item(
+            "analysis",
+            "Common Cause Analysis",
+            "Evaluates the FMS-3000 for vulnerability to common-mode "
+            "failures that could defeat redundancy. Includes zonal safety "
+            "analysis, particular risks assessment, and common-mode "
+            "failure analysis per ARP4761 Appendix E.",
+            **{"method": "Other",
+               "standard-reference": "ARP4761 Appendix E"},
+        )
+
+        self._compose(programme, fha, pssa, ssa, cca)
+
+        # ==============================================================
+        # REPORTS
+        # ==============================================================
+        sw_ver_report = self._item(
+            "report",
+            "Software Verification Results Report",
+            "Records the results of all software verification activities "
+            "including requirements-based testing, structural coverage "
+            "analysis, and review/analysis results per DO-178C §11.14.",
+            **{"report-status": "Draft"},
+        )
+        sw_config_index = self._item(
+            "report",
+            "Software Configuration Index",
+            "Identifies the configuration of the software product, "
+            "including all life cycle data items, their versions, and "
+            "the tools used to produce them per DO-178C §11.16.",
+            **{"report-status": "Draft"},
+        )
+        sw_qa_report = self._item(
+            "report",
+            "Software Quality Assurance Report",
+            "Summarises SQA audit results, process compliance findings, "
+            "and status of all open problem reports per DO-178C §11.18.",
+            **{"report-status": "Draft"},
+        )
+        safety_assessment_report = self._item(
+            "report",
+            "Safety Assessment Report",
+            "Consolidates results from the FHA, PSSA, SSA, and CCA into "
+            "a single report demonstrating compliance with AC 25.1309 "
+            "safety objectives.",
+            **{"report-status": "Draft"},
+        )
+
+        self._compose(programme, sw_ver_report, sw_config_index,
+                       sw_qa_report, safety_assessment_report)
+
+        # ==============================================================
+        # SYSTEM-LEVEL REQUIREMENTS (inside System Requirements Document)
+        # ==============================================================
+        req_nav_accuracy = self._item(
+            "requirement",
+            "Navigation accuracy shall be ≤ 0.1 NM for RNP operations",
+            "The FMS shall compute lateral position with total system error "
+            "not exceeding 0.1 NM (95 %) to support RNP 0.1 approach "
+            "operations as defined in RTCA DO-283B.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        req_availability = self._item(
+            "requirement",
+            "System availability shall be ≥ 99.999 % per flight hour",
+            "The FMS function shall meet a loss-of-function probability "
+            "of no greater than 1 × 10⁻⁵ per flight hour, consistent "
+            "with a Major failure condition classification.",
+            priority="Critical", **{"verification-method": "Analysis"},
+        )
+        req_mtbf = self._item(
+            "requirement",
+            "MTBF shall be ≥ 5,000 flight hours",
+            "The FMS LRU shall demonstrate a mean time between failures "
+            "of at least 5,000 flight hours based on in-service data or "
+            "reliability prediction per MIL-HDBK-217.",
+            priority="High", **{"verification-method": "Analysis"},
+        )
+        req_perf_compute = self._item(
+            "requirement",
+            "Performance computation shall complete within 2 seconds",
+            "All performance computations (takeoff, landing, cruise "
+            "optimisation) shall produce results within 2 seconds of "
+            "crew initiation on the CDU.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_arinc_429 = self._item(
+            "requirement",
+            "System shall interface via ARINC 429 and ARINC 629 buses",
+            "The FMS shall receive and transmit data on ARINC 429 low- "
+            "and high-speed buses and ARINC 629 data bus per the "
+            "applicable Interface Control Documents.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_dal_a = self._item(
+            "requirement",
+            "Navigation function shall be developed to DAL A",
+            "All software and hardware items implementing the navigation "
+            "function shall comply with DAL A assurance objectives per "
+            "DO-178C and DO-254 respectively, as derived from the FHA "
+            "Hazardous classification.",
+            priority="Critical", **{"verification-method": "Analysis"},
+        )
+
+        self._compose(sys_req_spec, req_nav_accuracy, req_availability,
+                       req_mtbf, req_perf_compute, req_arinc_429, req_dal_a)
+
+        # ==============================================================
+        # SOFTWARE HIGH-LEVEL REQUIREMENTS (inside SHLR spec)
+        # ==============================================================
+        hlr_flight_plan = self._item(
+            "requirement",
+            "FMS shall compute a flight plan route within 2 seconds",
+            "Given a departure, destination, and airway/waypoint sequence, "
+            "the FMS shall compute the complete lateral and vertical "
+            "flight plan within 2 seconds of crew activation.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        hlr_pos_update = self._item(
+            "requirement",
+            "Position update rate shall be ≥ 20 Hz",
+            "The navigation filter shall produce updated position, "
+            "velocity, and time estimates at a minimum rate of 20 Hz.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        hlr_db_crc = self._item(
+            "requirement",
+            "Navigation database CRC shall be verified at power-up",
+            "On each power-up, the FMS shall compute a CRC-32 over the "
+            "entire navigation database and compare it against the stored "
+            "reference value. A mismatch shall inhibit use of the database "
+            "and annunciate a fault to the crew.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        hlr_lateral_dev = self._item(
+            "requirement",
+            "Lateral deviation display shall update within 100 ms",
+            "The computed lateral deviation (cross-track error) shall be "
+            "transmitted to the display system within 100 ms of the "
+            "navigation solution update.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        hlr_vnav = self._item(
+            "requirement",
+            "FMS shall provide VNAV guidance from TOC to TOD",
+            "The FMS shall compute and transmit vertical navigation "
+            "guidance (target altitude, vertical speed, flight path angle) "
+            "from top of climb to top of descent, accounting for wind "
+            "and temperature deviations.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        hlr_integrity = self._item(
+            "requirement",
+            "FMS shall detect and annunciate navigation integrity failures",
+            "The FMS shall monitor navigation source integrity using RAIM "
+            "or equivalent. When integrity cannot be assured, the FMS "
+            "shall annunciate 'NAV UNABLE RNP' within 1 second.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+
+        self._compose(sw_hlr_spec, hlr_flight_plan, hlr_pos_update,
+                       hlr_db_crc, hlr_lateral_dev, hlr_vnav, hlr_integrity)
+
+        # Derive HLR from system requirements
+        self._derives(hlr_flight_plan, req_perf_compute)
+        self._derives(hlr_pos_update, req_nav_accuracy)
+        self._derives(hlr_db_crc, req_nav_accuracy)
+        self._derives(hlr_lateral_dev, req_nav_accuracy)
+        self._derives(hlr_vnav, req_nav_accuracy, req_perf_compute)
+        self._derives(hlr_integrity, req_nav_accuracy, req_dal_a)
+
+        # ==============================================================
+        # SOFTWARE LOW-LEVEL REQUIREMENTS (inside SLLR spec)
+        # ==============================================================
+        llr_db_loader = self._item(
+            "requirement",
+            "Database loader shall validate CRC-32 on all navigation records",
+            "The database loader module shall compute CRC-32 for each "
+            "ARINC 424 record group and compare against the index CRC. "
+            "Any mismatch shall set the database_valid flag to FALSE.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        llr_kalman = self._item(
+            "requirement",
+            "Position filter Kalman gain shall converge within 10 cycles",
+            "After initialisation, the Kalman filter gain matrix shall "
+            "converge to steady-state values within 10 update cycles "
+            "(0.5 seconds at 20 Hz).",
+            priority="High", **{"verification-method": "Test"},
+        )
+        llr_waypoint = self._item(
+            "requirement",
+            "Waypoint sequencing shall handle path discontinuities",
+            "When the active flight plan contains a course change > 90°, "
+            "the sequencing logic shall insert a fly-by or fly-over turn "
+            "anticipation segment and compute the correct transition path.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        llr_rnp_monitor = self._item(
+            "requirement",
+            "RNP monitoring shall compare ANP against RNP value each cycle",
+            "Each navigation cycle, the Actual Navigation Performance (ANP) "
+            "shall be compared against the Required Navigation Performance "
+            "(RNP). If ANP > RNP for 10 consecutive cycles, the NAV UNABLE "
+            "RNP alert shall be raised.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        llr_arinc_tx = self._item(
+            "requirement",
+            "ARINC 429 transmit shall complete within 1 ms per label",
+            "Each ARINC 429 output label shall be loaded into the "
+            "transmit register and sent within 1 ms to maintain bus "
+            "timing compliance.",
+            priority="High", **{"verification-method": "Test"},
+        )
+
+        self._compose(sw_llr_spec, llr_db_loader, llr_kalman, llr_waypoint,
+                       llr_rnp_monitor, llr_arinc_tx)
+
+        # Derive LLR from HLR
+        self._derives(llr_db_loader, hlr_db_crc)
+        self._derives(llr_kalman, hlr_pos_update)
+        self._derives(llr_waypoint, hlr_flight_plan)
+        self._derives(llr_rnp_monitor, hlr_integrity)
+        self._derives(llr_arinc_tx, hlr_lateral_dev)
+
+        # ==============================================================
+        # REQUIREMENT DECOMPOSITION
+        # ==============================================================
+
+        # Decompose nav accuracy into sub-requirements
+        req_gnss_accuracy = self._item(
+            "requirement",
+            "GNSS position accuracy shall be ≤ 5 m (95 %) in nominal conditions",
+            "The FMS shall use dual-frequency GNSS receivers providing "
+            "position accuracy of 5 m or better under open-sky conditions.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_iru_drift = self._item(
+            "requirement",
+            "IRU drift rate shall not exceed 1 NM per hour",
+            "The inertial reference unit drift contribution to total "
+            "system error shall not exceed 1 NM per hour of unaided "
+            "inertial navigation.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_filter_accuracy = self._item(
+            "requirement",
+            "Navigation filter shall maintain ≤ 0.05 NM accuracy when aided",
+            "When GNSS aiding is available, the blended navigation solution "
+            "shall achieve position accuracy of 0.05 NM or better (95 %).",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+
+        self._refines(req_nav_accuracy, req_gnss_accuracy, req_iru_drift,
+                         req_filter_accuracy)
+
+        # Decompose availability into sub-requirements
+        req_sw_partition = self._item(
+            "requirement",
+            "Software partitioning shall prevent fault propagation between functions",
+            "ARINC 653 partitioning shall isolate the navigation function "
+            "from non-critical functions so that a failure in a DAL C "
+            "partition cannot affect DAL A navigation.",
+            priority="Critical", **{"verification-method": "Analysis"},
+        )
+        req_hw_redundancy = self._item(
+            "requirement",
+            "Dual FMS architecture shall provide hot-standby switchover < 500 ms",
+            "On detection of a failure in the active FMS, the standby unit "
+            "shall assume the active role within 500 ms with no loss of "
+            "navigation guidance to the autopilot.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+
+        self._refines(req_availability, req_sw_partition, req_hw_redundancy)
+
+        # ==============================================================
+        # FHA CONTENTS (failure conditions inside FHA)
+        # ==============================================================
+        fha_loss_nav = self._item(
+            "information",
+            "FC-01: Loss of navigation function",
+            "Complete loss of FMS navigation guidance during approach. "
+            "Classification: Hazardous. Crew must revert to raw-data "
+            "navigation; risk of controlled flight into terrain if "
+            "undetected.\n\n"
+            "**Severity classification:** Hazardous\n"
+            "**Probability objective:** < 1 × 10⁻⁷ per flight hour",
+        )
+        fha_misleading_nav = self._item(
+            "information",
+            "FC-02: Misleading navigation information without annunciation",
+            "FMS provides erroneous position or guidance data without crew "
+            "awareness. Classification: Catastrophic. Could lead to "
+            "controlled flight into terrain or mid-air collision.\n\n"
+            "**Severity classification:** Catastrophic\n"
+            "**Probability objective:** < 1 × 10⁻⁹ per flight hour",
+        )
+        fha_loss_perf = self._item(
+            "information",
+            "FC-03: Loss of performance computation",
+            "FMS unable to provide takeoff or landing performance data. "
+            "Classification: Major. Crew must use manual performance "
+            "tables; increased workload.\n\n"
+            "**Severity classification:** Major\n"
+            "**Probability objective:** < 1 × 10⁻⁵ per flight hour",
+        )
+        fha_loss_fp = self._item(
+            "information",
+            "FC-04: Loss of flight plan management",
+            "FMS unable to create or modify flight plans. Classification: "
+            "Major. Crew must fly heading-based navigation; increased "
+            "workload and fuel consumption.\n\n"
+            "**Severity classification:** Major\n"
+            "**Probability objective:** < 1 × 10⁻⁵ per flight hour",
+        )
+
+        self._compose(fha, fha_loss_nav, fha_misleading_nav, fha_loss_perf,
+                       fha_loss_fp)
+
+        # ==============================================================
+        # SSA / FMEA CONTENTS (inside System Safety Assessment)
+        # ==============================================================
+        fm_db_corrupt = self._item(
+            "failure-mode",
+            "Navigation database corruption",
+            "Navigation database contains corrupted waypoint coordinates "
+            "or procedure data, leading to incorrect flight plan "
+            "computation or misleading guidance.",
+            severity="Critical",
+        )
+        fm_pos_diverge = self._item(
+            "failure-mode",
+            "Position computation divergence",
+            "Kalman filter state diverges from true position due to "
+            "undetected sensor faults or incorrect aiding data, "
+            "producing progressively worsening navigation error.",
+            severity="Critical",
+        )
+        fm_display_freeze = self._item(
+            "failure-mode",
+            "Navigation display rendering freeze",
+            "The ARINC 661 display controller stops updating the "
+            "navigation display, showing stale position and guidance "
+            "information to the crew.",
+            severity="High",
+        )
+        fm_bus_loss = self._item(
+            "failure-mode",
+            "FMS-to-autopilot ARINC 429 data link loss",
+            "Loss of the ARINC 429 output bus connecting the FMS to "
+            "the autopilot/flight director, causing loss of coupled "
+            "navigation guidance.",
+            severity="High",
+        )
+        fm_perf_error = self._item(
+            "failure-mode",
+            "Performance computation erroneous output",
+            "Takeoff or landing performance computation produces "
+            "incorrect V-speeds or field length due to incorrect "
+            "aircraft configuration input or algorithm error.",
+            severity="High",
+        )
+
+        self._compose(ssa, fm_db_corrupt, fm_pos_diverge, fm_display_freeze,
+                       fm_bus_loss, fm_perf_error)
+
+        # Failure causes
+        fc_nand = self._item(
+            "failure-cause",
+            "NAND flash bit rot in navigation database storage",
+            "Silent bit errors in the NAND flash memory storing the "
+            "navigation database corrupt waypoint data over time.",
+            category="Design",
+        )
+        fc_fp_overflow = self._item(
+            "failure-cause",
+            "Floating-point overflow in position filter",
+            "Extreme input values (e.g. near-polar latitude) cause "
+            "floating-point overflow in the Kalman filter state vector, "
+            "leading to position divergence.",
+            category="Software",
+        )
+        fc_gpu_leak = self._item(
+            "failure-cause",
+            "GPU memory leak in display controller",
+            "A memory leak in the display rendering software gradually "
+            "exhausts GPU memory, causing the display to freeze.",
+            category="Software",
+        )
+        fc_wire_break = self._item(
+            "failure-cause",
+            "ARINC 429 bus wire break",
+            "Physical break in the ARINC 429 twisted-pair wiring due to "
+            "vibration fatigue or connector failure.",
+            category="Manufacturing",
+        )
+        fc_config_input = self._item(
+            "failure-cause",
+            "Incorrect aircraft configuration data entry",
+            "Crew enters wrong aircraft weight, flap setting, or runway "
+            "condition, leading to erroneous performance computation.",
+            category="Human Error",
+        )
+        fc_cosmic_ray = self._item(
+            "failure-cause",
+            "Single-event upset from cosmic radiation",
+            "High-energy neutron strikes flip bits in processor registers "
+            "or SRAM, corrupting computation results.",
+            category="Environmental",
+        )
+
+        self._compose(ssa, fc_nand, fc_fp_overflow, fc_gpu_leak,
+                       fc_wire_break, fc_config_input, fc_cosmic_ray)
+
+        # Cause → mode
+        self._causes(fc_nand, fm_db_corrupt)
+        self._causes(fc_fp_overflow, fm_pos_diverge)
+        self._causes(fc_gpu_leak, fm_display_freeze)
+        self._causes(fc_wire_break, fm_bus_loss)
+        self._causes(fc_config_input, fm_perf_error)
+        self._causes(fc_cosmic_ray, fm_pos_diverge, fm_db_corrupt)
+
+        # Mode → requirement
+        self._mitigates(fm_db_corrupt, hlr_db_crc, req_nav_accuracy)
+        self._mitigates(fm_pos_diverge, hlr_integrity, req_nav_accuracy)
+        self._mitigates(fm_display_freeze, hlr_lateral_dev)
+        self._mitigates(fm_bus_loss, req_arinc_429, req_availability)
+        self._mitigates(fm_perf_error, req_perf_compute)
+
+        # ==============================================================
+        # RISK ASSESSMENT (inside Safety Assessment Report)
+        # ==============================================================
+        risk_gnss = self._item(
+            "risk",
+            "GNSS signal loss or degradation during RNP approach",
+            "Loss of GNSS signals during an RNP approach due to "
+            "interference, ionospheric scintillation, or intentional "
+            "jamming, causing reversion to degraded navigation.",
+            severity="High", likelihood="Possible",
+            mitigation=(
+                "Dual-frequency GNSS receivers with RAIM. Automatic "
+                "reversion to IRU-only navigation with crew annunciation. "
+                "Operational procedure to abort approach if RNP cannot be "
+                "maintained."
+            ),
+        )
+        risk_db_update = self._item(
+            "risk",
+            "Navigation database update introduces erroneous data",
+            "An AIRAC cycle update contains incorrect procedure or "
+            "waypoint data due to data provider error, affecting flight "
+            "plan accuracy.",
+            severity="Critical", likelihood="Unlikely",
+            mitigation=(
+                "CRC-32 validation at load time. Cross-check of critical "
+                "procedures against NOTAMs. Qualification of database "
+                "supplier per DO-200B."
+            ),
+        )
+        risk_common_mode = self._item(
+            "risk",
+            "Common-mode software fault in dual FMS installation",
+            "A software defect present in both FMS units causes "
+            "simultaneous failure of the active and standby FMS, "
+            "resulting in total loss of FMS function.",
+            severity="Critical", likelihood="Rare",
+            mitigation=(
+                "DAL A development and verification processes per DO-178C. "
+                "Modified Condition/Decision Coverage analysis. "
+                "Independent review of safety-critical algorithms."
+            ),
+        )
+        risk_seu = self._item(
+            "risk",
+            "Single-event upset causes undetected computation error",
+            "A cosmic ray-induced bit flip in the processor or memory "
+            "corrupts a safety-critical computation without detection, "
+            "leading to misleading guidance.",
+            severity="Critical", likelihood="Possible",
+            mitigation=(
+                "ECC memory for all safety-critical data. Dual-lock-step "
+                "processor comparison for DAL A functions. Software "
+                "reasonableness checks on all outputs."
+            ),
+        )
+
+        self._compose(safety_assessment_report, risk_gnss, risk_db_update,
+                       risk_common_mode, risk_seu)
+
+        # Risk → requirement
+        self._mitigates(risk_gnss, req_nav_accuracy, req_availability)
+        self._mitigates(risk_db_update, hlr_db_crc, req_nav_accuracy)
+        self._mitigates(risk_common_mode, req_availability, req_dal_a)
+        self._mitigates(risk_seu, req_dal_a, hlr_integrity)
+
+        # ==============================================================
+        # SECURITY ASSESSMENT (DO-326A / ED-202A)
+        # ==============================================================
+        security_spec = self._item(
+            "specification",
+            "Security Requirements Specification",
+            "Airworthiness security requirements for the FMS-3000 derived "
+            "from threat assessment per DO-326A / ED-202A, covering data "
+            "loading, maintenance ports, and datalink interfaces.",
+            **{"baseline": "SEC-BL-1",
+               "standard-reference": "DO-326A, ED-202A"},
+        )
+        tara = self._item(
+            "analysis",
+            "Threat Assessment (DO-326A)",
+            "Systematic identification and evaluation of intentional "
+            "unauthorised electronic interactions (IUEI) for the FMS-3000 "
+            "per DO-326A / ED-202A.",
+            **{"method": "Other",
+               "standard-reference": "DO-326A §4"},
+        )
+
+        self._compose(programme, security_spec, tara)
+
+        # Security requirements
+        req_sec_dataload = self._item(
+            "requirement",
+            "Database loading shall verify cryptographic signature",
+            "All navigation database and software loads shall be "
+            "cryptographically signed. The FMS shall verify the signature "
+            "using a stored public key before accepting the load.",
+            priority="Critical", **{"verification-method": "Test"},
+        )
+        req_sec_maint = self._item(
+            "requirement",
+            "Maintenance port access shall require authentication",
+            "The FMS maintenance port (ARINC 615A data loader interface) "
+            "shall require certificate-based authentication before "
+            "accepting any configuration or software load commands.",
+            priority="High", **{"verification-method": "Test"},
+        )
+        req_sec_datalink = self._item(
+            "requirement",
+            "ACARS/VDL datalink messages shall be authenticated",
+            "All uplink messages received via ACARS or VDL Mode 2 that "
+            "affect the active flight plan shall be authenticated and "
+            "integrity-checked before processing.",
+            priority="High", **{"verification-method": "Test"},
+        )
+
+        self._compose(security_spec, req_sec_dataload, req_sec_maint,
+                       req_sec_datalink)
+        self._derives(req_sec_dataload, req_dal_a)
+
+        # Threats
+        thr_gps_spoof = self._item(
+            "threat",
+            "GPS spoofing via counterfeit GNSS signals",
+            "An attacker broadcasts counterfeit GNSS signals to mislead "
+            "the FMS navigation solution, potentially causing the "
+            "aircraft to deviate from the intended flight path.",
+            **{"threat-level": "Critical", "attack-vector": "Adjacent",
+               "threat-agent": "State-level actor or sophisticated attacker"},
+        )
+        thr_malicious_db = self._item(
+            "threat",
+            "Malicious navigation database injection",
+            "An attacker inserts tampered navigation data during the "
+            "database loading process, modifying waypoint coordinates "
+            "or procedure definitions.",
+            **{"threat-level": "Critical", "attack-vector": "Physical",
+               "threat-agent": "Insider with maintenance access"},
+        )
+        thr_maint_access = self._item(
+            "threat",
+            "Unauthorised maintenance port access",
+            "An attacker gains physical access to the FMS maintenance "
+            "port and attempts to upload unauthorised software or "
+            "extract sensitive data.",
+            **{"threat-level": "High", "attack-vector": "Physical",
+               "threat-agent": "Insider or opportunistic attacker"},
+        )
+        thr_datalink = self._item(
+            "threat",
+            "ACARS uplink message injection",
+            "An attacker injects forged ACARS uplink messages to modify "
+            "the active flight plan waypoints or performance parameters.",
+            **{"threat-level": "High", "attack-vector": "Network",
+               "threat-agent": "Remote attacker with radio equipment"},
+        )
+
+        self._compose(tara, thr_gps_spoof, thr_malicious_db,
+                       thr_maint_access, thr_datalink)
+
+        # Vulnerabilities
+        vuln_gnss_noauth = self._item(
+            "vulnerability",
+            "GNSS civil signals lack authentication",
+            "GPS L1 C/A and L5 civil signals do not include native "
+            "authentication, allowing spoofing with commercially "
+            "available equipment.",
+            severity="Critical",
+            **{"attack-feasibility": "High",
+               "component": "GNSS receiver"},
+        )
+        vuln_db_unsigned = self._item(
+            "vulnerability",
+            "Legacy database loader accepts unsigned data",
+            "The current database loader only verifies ARINC 424 format "
+            "but does not verify a cryptographic signature over the "
+            "database contents.",
+            severity="Critical",
+            **{"attack-feasibility": "Medium",
+               "component": "Database loader"},
+        )
+        vuln_maint_noauth = self._item(
+            "vulnerability",
+            "Maintenance port lacks access authentication",
+            "The ARINC 615A data loader interface accepts connections "
+            "without authentication, relying solely on physical access "
+            "control.",
+            severity="High",
+            **{"attack-feasibility": "Medium",
+               "component": "Maintenance interface"},
+        )
+        vuln_acars_noauth = self._item(
+            "vulnerability",
+            "ACARS messages not integrity-protected",
+            "ACARS uplink messages are accepted without message "
+            "authentication codes, relying on procedural controls.",
+            severity="High",
+            **{"attack-feasibility": "Medium",
+               "component": "ACARS interface"},
+        )
+
+        self._compose(tara, vuln_gnss_noauth, vuln_db_unsigned,
+                       vuln_maint_noauth, vuln_acars_noauth)
+
+        # Threat → Vulnerability
+        self._exploits(thr_gps_spoof, vuln_gnss_noauth)
+        self._exploits(thr_malicious_db, vuln_db_unsigned)
+        self._exploits(thr_maint_access, vuln_maint_noauth)
+        self._exploits(thr_datalink, vuln_acars_noauth)
+
+        # Mitigations
+        mit_raim = self._item(
+            "mitigation",
+            "RAIM and dual-frequency GNSS cross-check",
+            "Implement Receiver Autonomous Integrity Monitoring with "
+            "dual-frequency cross-checking to detect spoofed or "
+            "anomalous GNSS signals.",
+            **{"control-type": "Detective",
+               "implementation-status": "Implemented"},
+        )
+        mit_db_signing = self._item(
+            "mitigation",
+            "Cryptographic database signing per DO-200B",
+            "Sign all navigation databases with RSA-2048 using an "
+            "offline signing authority. The FMS verifies the signature "
+            "against a securely stored public key before loading.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Implemented"},
+        )
+        mit_maint_auth = self._item(
+            "mitigation",
+            "Certificate-based maintenance port authentication",
+            "Require X.509 certificate exchange on the maintenance "
+            "port before accepting any data loader commands. "
+            "Certificates are provisioned during manufacture.",
+            **{"control-type": "Preventive",
+               "implementation-status": "In Progress"},
+        )
+        mit_acars_mac = self._item(
+            "mitigation",
+            "ACARS message authentication code verification",
+            "Implement HMAC-SHA256 verification on all ACARS uplink "
+            "messages that modify the active flight plan. Messages "
+            "without valid MACs are rejected and logged.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Planned"},
+        )
+
+        self._compose(tara, mit_raim, mit_db_signing, mit_maint_auth,
+                       mit_acars_mac)
+
+        # Mitigation → Vulnerability
+        self._mitigates(mit_raim, vuln_gnss_noauth)
+        self._mitigates(mit_db_signing, vuln_db_unsigned)
+        self._mitigates(mit_maint_auth, vuln_maint_noauth)
+        self._mitigates(mit_acars_mac, vuln_acars_noauth)
+
+        # Mitigation → Requirement
+        self._mitigates(mit_raim, hlr_integrity, req_nav_accuracy)
+        self._mitigates(mit_db_signing, req_sec_dataload)
+        self._mitigates(mit_maint_auth, req_sec_maint)
+        self._mitigates(mit_acars_mac, req_sec_datalink)
+
+        # Threat → Requirement
+        self._mitigates(thr_gps_spoof, req_nav_accuracy, hlr_integrity)
+        self._mitigates(thr_malicious_db, hlr_db_crc, req_sec_dataload)
+        self._mitigates(thr_maint_access, req_sec_maint)
+        self._mitigates(thr_datalink, req_sec_datalink)
+
+        # ==============================================================
+        # VERIFICATION TEST CASES (inside Software Verification Plan)
+        # ==============================================================
+
+        # -- Navigation verification --
+        tc_nav_accuracy = self._item(
+            "test-case",
+            "VER-NAV-001: RNP 0.1 navigation accuracy test",
+            "Verify the FMS meets 0.1 NM accuracy under simulated RNP "
+            "approach conditions.",
+            **{
+                "test-steps": (
+                    "1. Configure HIL simulator with known reference trajectory.\n"
+                    "2. Inject GNSS and IRU data for an RNP 0.1 approach.\n"
+                    "3. Record FMS computed position at 20 Hz.\n"
+                    "4. Compare against reference; compute 95th-percentile error."
+                ),
+                "expected-result": "95th-percentile total system error ≤ 0.1 NM.",
+            },
+        )
+        tc_pos_rate = self._item(
+            "test-case",
+            "VER-NAV-002: Position update rate verification",
+            "Verify the navigation filter produces outputs at ≥ 20 Hz.",
+            **{
+                "test-steps": (
+                    "1. Run FMS in HIL with nominal sensor inputs.\n"
+                    "2. Monitor ARINC 429 output labels for position data.\n"
+                    "3. Measure update interval over 10,000 cycles."
+                ),
+                "expected-result": "Mean update rate ≥ 20 Hz; no gap > 100 ms.",
+            },
+        )
+        tc_db_crc = self._item(
+            "test-case",
+            "VER-NAV-003: Navigation database CRC check",
+            "Verify that a corrupted database is detected and rejected.",
+            **{
+                "test-steps": (
+                    "1. Load a known-good navigation database.\n"
+                    "2. Flip one bit in a waypoint record.\n"
+                    "3. Power-cycle the FMS.\n"
+                    "4. Verify CRC check fails and 'NAV DB FAIL' annunciation appears."
+                ),
+                "expected-result": "Corrupted database rejected; fault annunciated.",
+            },
+        )
+        tc_integrity = self._item(
+            "test-case",
+            "VER-NAV-004: Navigation integrity monitoring test",
+            "Verify FMS detects and annunciates loss of RNP integrity.",
+            **{
+                "test-steps": (
+                    "1. Simulate gradual GNSS degradation during RNP approach.\n"
+                    "2. Monitor for 'NAV UNABLE RNP' annunciation.\n"
+                    "3. Verify annunciation occurs within 1 second of ANP > RNP."
+                ),
+                "expected-result": "'NAV UNABLE RNP' annunciated within 1 s.",
+            },
+        )
+
+        self._compose(sw_ver_plan, tc_nav_accuracy, tc_pos_rate, tc_db_crc,
+                       tc_integrity)
+
+        # -- Flight planning verification --
+        tc_fp_compute = self._item(
+            "test-case",
+            "VER-FP-001: Flight plan computation time",
+            "Verify flight plan computation completes within 2 seconds.",
+            **{
+                "test-steps": (
+                    "1. Enter a 15-waypoint flight plan on the CDU.\n"
+                    "2. Press EXEC and start timer.\n"
+                    "3. Record time to route display completion.\n"
+                    "4. Repeat with 50-waypoint plan."
+                ),
+                "expected-result": "Computation time ≤ 2 s for both cases.",
+            },
+        )
+        tc_vnav = self._item(
+            "test-case",
+            "VER-FP-002: VNAV guidance accuracy",
+            "Verify VNAV profile computation against reference trajectories.",
+            **{
+                "test-steps": (
+                    "1. Load reference flight plan with known wind data.\n"
+                    "2. Compare FMS VNAV targets (altitude, VS) against "
+                    "certified reference at 20 waypoints.\n"
+                    "3. Record deviations."
+                ),
+                "expected-result": "Altitude deviation ≤ 50 ft; VS deviation ≤ 100 fpm.",
+            },
+        )
+        tc_discontinuity = self._item(
+            "test-case",
+            "VER-FP-003: Path discontinuity handling",
+            "Verify correct waypoint sequencing at course changes > 90°.",
+            **{
+                "test-steps": (
+                    "1. Create flight plan with 120° course change.\n"
+                    "2. Fly the plan in HIL simulation.\n"
+                    "3. Verify turn anticipation segment is inserted.\n"
+                    "4. Verify no lateral deviation exceedance during turn."
+                ),
+                "expected-result": "Smooth transition with XTK ≤ 0.05 NM.",
+            },
+        )
+
+        self._compose(sw_ver_plan, tc_fp_compute, tc_vnav, tc_discontinuity)
+
+        # -- Performance computation verification --
+        tc_perf = self._item(
+            "test-case",
+            "VER-PERF-001: Takeoff performance computation",
+            "Verify takeoff V-speeds and field length against certified "
+            "performance data.",
+            **{
+                "test-steps": (
+                    "1. Enter aircraft weight, temperature, pressure altitude, "
+                    "and runway length for 10 standard conditions.\n"
+                    "2. Compare FMS-computed V1, VR, V2 against certified tables.\n"
+                    "3. Compare field length required."
+                ),
+                "expected-result": "V-speed error ≤ 1 kt; field length error ≤ 50 ft.",
+            },
+        )
+
+        self._compose(sw_ver_plan, tc_perf)
+
+        # -- Structural coverage test cases (DO-178C DAL A) --
+        tc_mcdc = self._item(
+            "test-case",
+            "VER-COV-001: MC/DC structural coverage analysis",
+            "Verify Modified Condition/Decision Coverage meets DO-178C "
+            "DAL A objectives for all source code modules.",
+            **{
+                "test-steps": (
+                    "1. Execute full requirements-based test suite.\n"
+                    "2. Collect MC/DC coverage data using qualified tool.\n"
+                    "3. Identify gaps and add supplementary test cases.\n"
+                    "4. Analyse uncoverable code and document justifications."
+                ),
+                "expected-result": "100 % MC/DC achieved or all gaps justified.",
+            },
+        )
+        tc_stack = self._item(
+            "test-case",
+            "VER-COV-002: Stack usage analysis",
+            "Verify worst-case stack usage is within allocated limits.",
+            **{
+                "test-steps": (
+                    "1. Run static stack analysis tool on all tasks.\n"
+                    "2. Add measured interrupt stack to each task's worst case.\n"
+                    "3. Verify total ≤ 80 % of allocated stack per ARINC 653 partition."
+                ),
+                "expected-result": "All partitions ≤ 80 % stack utilisation.",
+            },
+        )
+
+        self._compose(sw_ver_plan, tc_mcdc, tc_stack)
+
+        # -- Security verification --
+        tc_sec_db = self._item(
+            "test-case",
+            "VER-SEC-001: Database signature verification",
+            "Verify that unsigned or tampered databases are rejected.",
+            **{
+                "test-steps": (
+                    "1. Attempt to load a database without a signature.\n"
+                    "2. Attempt to load a database with an invalid signature.\n"
+                    "3. Load a correctly signed database.\n"
+                    "4. Verify only the valid load succeeds."
+                ),
+                "expected-result": "Unsigned/tampered loads rejected; valid load accepted.",
+            },
+        )
+        tc_sec_maint = self._item(
+            "test-case",
+            "VER-SEC-002: Maintenance port authentication test",
+            "Verify the maintenance port rejects unauthenticated connections.",
+            **{
+                "test-steps": (
+                    "1. Connect to maintenance port without certificate.\n"
+                    "2. Verify connection is rejected.\n"
+                    "3. Connect with valid certificate.\n"
+                    "4. Verify connection is accepted."
+                ),
+                "expected-result": "Unauthenticated connections refused.",
+            },
+        )
+
+        self._compose(sw_ver_plan, tc_sec_db, tc_sec_maint)
+
+        # ==============================================================
+        # VERIFICATION RELATIONS (test case verifies requirement)
+        # ==============================================================
+
+        # Navigation tests → requirements
+        self._verifies(tc_nav_accuracy, req_nav_accuracy, req_filter_accuracy)
+        self._verifies(tc_pos_rate, hlr_pos_update, llr_kalman)
+        self._verifies(tc_db_crc, hlr_db_crc, llr_db_loader)
+        self._verifies(tc_integrity, hlr_integrity, llr_rnp_monitor)
+
+        # Flight planning tests → requirements
+        self._verifies(tc_fp_compute, hlr_flight_plan, req_perf_compute)
+        self._verifies(tc_vnav, hlr_vnav)
+        self._verifies(tc_discontinuity, llr_waypoint)
+
+        # Performance tests → requirements
+        self._verifies(tc_perf, req_perf_compute)
+
+        # Coverage tests → DAL A
+        self._verifies(tc_mcdc, req_dal_a)
+        self._verifies(tc_stack, req_sw_partition)
+
+        # Security tests → security requirements
+        self._verifies(tc_sec_db, req_sec_dataload)
+        self._verifies(tc_sec_maint, req_sec_maint)
+
+        # ==============================================================
+        # MATRICES (traceability tables)
+        # ==============================================================
+
+        # 1. System RTM: Requirements → Verifying Test Cases
+        self._matrix(
+            name="System Requirements Traceability Matrix",
+            description=(
+                "Traces every system requirement to the verification "
+                "test cases that cover it."
+            ),
+            columns=[
+                {
+                    "label": "Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 2. Software HLR → Tests + Derived From
+        self._matrix(
+            name="Software HLR Traceability",
+            description=(
+                "Traces each Software High-Level Requirement to its "
+                "verification test cases and the system requirements "
+                "it derives from."
+            ),
+            columns=[
+                {
+                    "label": "High-Level Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sw_hlr_spec,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+                {
+                    "label": "Derives From",
+                    "relation_name": "derives_from",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 3. Software LLR → Tests + Derived From HLR
+        self._matrix(
+            name="Software LLR Traceability",
+            description=(
+                "Traces each Software Low-Level Requirement to its "
+                "verification test cases and the HLRs it derives from."
+            ),
+            columns=[
+                {
+                    "label": "Low-Level Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sw_llr_spec,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+                {
+                    "label": "Derives From",
+                    "relation_name": "derives_from",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 4. SSA FMEA: Failure Modes → Causes + Challenged Requirements
+        self._matrix(
+            name="System Safety Assessment (FMEA)",
+            description=(
+                "Links each failure mode to its root causes and the "
+                "requirements it challenges."
+            ),
+            columns=[
+                {
+                    "label": "Failure Mode",
+                    "seed_item_type_slug": "failure-mode",
+                    "seed_container": ssa,
+                },
+                {
+                    "label": "Caused By",
+                    "relation_name": "causes",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+                {
+                    "label": "Challenged Requirements",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 5. Risk Assessment
+        self._matrix(
+            name="Safety Risk Assessment",
+            description=(
+                "Shows each safety risk and the requirements it "
+                "challenges, for risk acceptability review."
+            ),
+            columns=[
+                {
+                    "label": "Risk",
+                    "seed_item_type_slug": "risk",
+                    "seed_container": safety_assessment_report,
+                },
+                {
+                    "label": "Challenged Requirements",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 6. DO-326A Threat Assessment
+        self._matrix(
+            name="DO-326A Threat Assessment",
+            description=(
+                "Links each security threat to the vulnerabilities it "
+                "exploits and the mitigations applied."
+            ),
+            columns=[
+                {
+                    "label": "Threat",
+                    "seed_item_type_slug": "threat",
+                    "seed_container": tara,
+                },
+                {
+                    "label": "Exploited Vulnerabilities",
+                    "relation_name": "exploits",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Mitigations",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 7. Requirement Decomposition
+        self._matrix(
+            name="Requirement Decomposition Matrix",
+            description=(
+                "Shows how system requirements are decomposed into "
+                "lower-level sub-requirements."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Refined By",
+                    "relation_name": "refines",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )

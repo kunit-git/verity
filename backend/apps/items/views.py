@@ -283,7 +283,7 @@ class ItemViewSet(VaultScopedMixin, viewsets.ModelViewSet):
             child_ids = ItemRelation.objects.filter(
                 relation_type__in=comp_types,
             ).values_list("target_id", flat=True)
-            qs = Item.objects.exclude(id__in=child_ids).select_related("item_type")
+            qs = self.get_queryset().exclude(id__in=child_ids)
             qs = self._annotate_child_count(qs, comp_types)
             qs = self._annotate_suspect_links(qs)
             qs = self._annotate_suspect_descendants(qs)
@@ -305,7 +305,7 @@ class ItemViewSet(VaultScopedMixin, viewsets.ModelViewSet):
                 relation_type__in=comp_types,
                 source_id=pk,
             ).values_list("target_id", flat=True)
-            qs = Item.objects.filter(id__in=child_ids).select_related("item_type")
+            qs = self.get_queryset().filter(id__in=child_ids)
             qs = self._annotate_child_count(qs, comp_types)
             qs = self._annotate_suspect_links(qs)
             qs = self._annotate_suspect_descendants(qs)

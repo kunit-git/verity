@@ -22,6 +22,7 @@ import { getItem, getItems, deleteItem, getItemTypes, getItemVersions } from "..
 import { getNavigation, getRelationTypes, createRelation } from "../api/relations";
 import { generateDocument } from "../api/mailbox";
 import CompareDialog from "../components/CompareDialog";
+import { useConfirm } from "../components/ConfirmDialog";
 import type { NavigationRef, RelationType, ItemVersion } from "../types";
 import { useState } from "react";
 
@@ -29,6 +30,7 @@ export default function ItemNavigator() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const { data: item, isLoading } = useQuery({
     queryKey: ["item", id],
@@ -242,8 +244,8 @@ export default function ItemNavigator() {
             <LinkIcon className="h-4 w-4" />
           </button>
           <button
-            onClick={() => {
-              if (confirm("Delete this item?")) deleteMutation.mutate();
+            onClick={async () => {
+              if (await confirm("Delete this item?")) deleteMutation.mutate();
             }}
             className="rounded p-1.5 text-red-500 hover:bg-red-50"
             title="Delete"

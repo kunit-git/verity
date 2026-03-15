@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, KeyRound, Lock, LockOpen, Trash2, UserPlus } from "lucide-react";
 import { getUsers, updateUserSiteAdmin, getSiteSettings, updateSiteSettings, lockUser, unlockUser, deleteUser, createUser } from "../api/users";
 import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../components/ConfirmDialog";
 import ChangePasswordDialog from "../components/ChangePasswordDialog";
 
 function MailboxLimitControl({
@@ -171,6 +172,7 @@ function AddUserDialog({
 export default function UserManagementPage() {
   const { user: me } = useAuth();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [passwordTarget, setPasswordTarget] = useState<{
     id: number;
     username: string;
@@ -402,8 +404,8 @@ export default function UserManagementPage() {
                             </button>
                           )}
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Permanently delete the account "${u.username}"? This cannot be undone.`)) {
+                            onClick={async () => {
+                              if (await confirm(`Permanently delete the account "${u.username}"? This cannot be undone.`)) {
                                 deleteMutation.mutate(u.id);
                               }
                             }}

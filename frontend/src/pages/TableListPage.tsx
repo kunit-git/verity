@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 import { Plus, Trash2, Table2 } from "lucide-react";
 import { getTables, deleteTable } from "../api/tables";
 import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../components/ConfirmDialog";
 
 export default function TableListPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const confirm = useConfirm();
 
   const { data: tables, isLoading } = useQuery({
     queryKey: ["tables"],
@@ -108,8 +110,8 @@ export default function TableListPage() {
                     <td className="px-4 py-3 text-right">
                       {user?.vault_role && user.vault_role !== "viewer" && (
                         <button
-                          onClick={() => {
-                            if (confirm(`Delete table "${t.name}"?`))
+                          onClick={async () => {
+                            if (await confirm(`Delete table "${t.name}"?`))
                               deleteMutation.mutate(t.id);
                           }}
                           className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"

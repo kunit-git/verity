@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getItemTypes, getDocumentTemplate, saveDocumentTemplate, deleteDocumentTemplate } from "../api/items";
 import type { ItemType } from "../types";
 import { useAuth } from "../auth/AuthContext";
+import { useConfirm } from "../components/ConfirmDialog";
 
 export default function DocumentTemplateManager() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -93,6 +94,7 @@ function ItemTypeRow({
 function TemplateEditor({ itemTypeId }: { itemTypeId: string }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const isEditor = user?.vault_role === "editor" || user?.vault_role === "admin";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -242,8 +244,8 @@ function TemplateEditor({ itemTypeId }: { itemTypeId: string }) {
               </button>
               {hasCustom && (
                 <button
-                  onClick={() => {
-                    if (confirm("Delete custom template and revert to default?"))
+                  onClick={async () => {
+                    if (await confirm("Delete custom template and revert to default?"))
                       deleteMutation.mutate();
                   }}
                   disabled={deleteMutation.isPending}

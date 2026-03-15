@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Download, Trash2, Inbox, X, ArrowLeft } from "lucide-react";
+import { useConfirm } from "../components/ConfirmDialog";
 import { getMailboxArtifacts, getMailboxArtifact, deleteMailboxArtifact } from "../api/mailbox";
 import type { MailboxArtifactDetail } from "../types";
 
@@ -18,6 +19,7 @@ function isMarkdown(filename: string): boolean {
 
 export default function MailboxPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [viewing, setViewing] = useState<MailboxArtifactDetail | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
@@ -165,8 +167,8 @@ export default function MailboxPage() {
                         <Download className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm("Delete this document?"))
+                        onClick={async () => {
+                          if (await confirm("Delete this document?"))
                             deleteMutation.mutate(a.id);
                         }}
                         className="rounded p-1.5 text-red-500 hover:bg-red-50"

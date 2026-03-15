@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Plus, Trash2, UserPlus, X, Lock, Unlock, ClipboardList } from "lucide-react";
 import * as vaultsApi from "../api/vaults";
+import { useConfirm } from "../components/ConfirmDialog";
 import { getUsers } from "../api/users";
 import { useAuth } from "../auth/AuthContext";
 import type { VaultMembership } from "../types";
@@ -21,6 +22,7 @@ export default function VaultManagementPage() {
   const { user } = useAuth();
   const isSiteAdmin = user?.is_site_admin ?? false;
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [showCreate, setShowCreate] = useState(false);
   const [expandedVault, setExpandedVault] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -191,8 +193,8 @@ export default function VaultManagementPage() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => {
-                        if (confirm(`Lock vault "${vault.name}"? All data will become read-only.`)) {
+                      onClick={async () => {
+                        if (await confirm(`Lock vault "${vault.name}"? All data will become read-only.`)) {
                           lockMutation.mutate(vault.id);
                         }
                       }}
@@ -205,8 +207,8 @@ export default function VaultManagementPage() {
                   )}
                   {isSiteAdmin && (
                     <button
-                      onClick={() => {
-                        if (confirm(`Delete vault "${vault.name}"?`)) {
+                      onClick={async () => {
+                        if (await confirm(`Delete vault "${vault.name}"?`)) {
                           deleteMutation.mutate(vault.id);
                         }
                       }}

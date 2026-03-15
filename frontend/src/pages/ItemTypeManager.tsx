@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { useConfirm } from "../components/ConfirmDialog";
 import {
   getItemTypes,
   createItemType,
@@ -81,6 +82,7 @@ function ItemTypeCard({
 }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [showAddField, setShowAddField] = useState(false);
   const [newField, setNewField] = useState({
     name: "",
@@ -161,8 +163,8 @@ function ItemTypeCard({
         </button>
         {user?.vault_role && user.vault_role !== "viewer" && (
           <button
-            onClick={() => {
-              if (canDelete && confirm(`Delete item type "${itemType.name}"?`))
+            onClick={async () => {
+              if (canDelete && await confirm(`Delete item type "${itemType.name}"?`))
                 deleteTypeMutation.mutate();
             }}
             disabled={!canDelete || deleteTypeMutation.isPending}
@@ -212,8 +214,8 @@ function ItemTypeCard({
                     </td>
                     <td className="py-1.5">
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete field "${f.name}"?`))
+                        onClick={async () => {
+                          if (await confirm(`Delete field "${f.name}"?`))
                             deleteFieldMutation.mutate(f.id);
                         }}
                         className="text-red-400 hover:text-red-600"

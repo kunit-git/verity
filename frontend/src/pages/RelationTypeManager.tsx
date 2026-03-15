@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { getRelationTypes, createRelationType, deleteRelationType } from "../api/relations";
+import { useConfirm } from "../components/ConfirmDialog";
 import { getItemTypes } from "../api/items";
 
 export default function RelationTypeManager() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const { data: relationTypes, isLoading } = useQuery({
     queryKey: ["relationTypes"],
     queryFn: getRelationTypes,
@@ -262,8 +264,8 @@ export default function RelationTypeManager() {
                   <td className="px-4 py-3 text-right">
                     {!rt.is_builtin && (
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete relation type "${rt.name}"?`))
+                        onClick={async () => {
+                          if (await confirm(`Delete relation type "${rt.name}"?`))
                             deleteMutation.mutate(rt.id);
                         }}
                         className="rounded p-1 text-red-500 hover:bg-red-50"

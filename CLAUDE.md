@@ -42,6 +42,26 @@ The Python venv is at `.venv/` in the project root (not inside `backend/`). Alwa
 
 `DJANGO_SETTINGS_MODULE` defaults to `verity.settings.development` when running `manage.py` locally. For production use `verity.settings.production`.
 
+## Testing
+
+The backend has a pytest test suite. When adding new functionality or modifying existing endpoints, always write tests for the new/changed behavior. After completing any backend change, run the full test suite to confirm nothing is broken.
+
+```bash
+# Run from backend/ with venv active
+pytest                              # all tests
+pytest -x                           # stop on first failure
+pytest apps/accounts/tests/ -v      # single app
+pytest apps/items/tests/test_item_crud.py::TestItemCreate -v  # single class
+```
+
+### Writing tests
+
+- Tests live in `apps/<app>/tests/test_*.py`. Add tests to the relevant app's test directory.
+- Use the factories and fixtures defined in `backend/conftest.py` (`UserFactory`, `VaultFactory`, `ItemTypeFactory`, `ItemFactory`, etc.) to set up test data.
+- Use the shared fixtures `editor_client`, `viewer_client`, and `site_admin_client` for authenticated API calls. These are pre-configured with JWT tokens and vault access.
+- Every new endpoint needs tests for: success case, permission checks (viewer vs editor vs admin), and input validation (400 on bad data).
+- Run `pytest` after every backend change to verify all tests pass before considering the work done.
+
 ## Architecture
 
 ### Backend (`backend/`)

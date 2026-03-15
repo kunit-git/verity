@@ -1,7 +1,7 @@
 """
 Management command: populate_example
 
-Wipes example vaults (if they exist), then populates two realistic examples:
+Wipes example vaults (if they exist), then populates three realistic examples:
 
 1. **AV System** — an Autonomous Vehicle System organised around document
    deliverables: plans, specifications, FMEA analyses, risk assessments,
@@ -11,6 +11,11 @@ Wipes example vaults (if they exist), then populates two realistic examples:
    following DO-178C, ARP4754A, and ARP4761, including system & software
    requirements, functional hazard assessment, FMEA, verification, and
    DO-326A security assessment.
+
+3. **Medical Device** — an Implantable Cardiac Pacemaker development
+   programme following IEC 62304 (software lifecycle), ISO 14971 (risk
+   management), IEC 60601-1 (general safety), and EU MDR / FDA 21 CFR 820,
+   with emphasis on patient safety, biocompatibility, and cybersecurity.
 
 Item types used (per vault):
   Project, Plan, Specification, Report, Analysis, Information,
@@ -37,7 +42,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Populate example vaults (AV System + Avionics FMS)"
+    help = "Populate example vaults (AV System + Avionics FMS + Medical Device)"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -400,12 +405,14 @@ class Command(BaseCommand):
 
     AV_VAULT_SLUG = "av-system"
     AVIONICS_VAULT_SLUG = "avionics-fms"
+    MEDICAL_VAULT_SLUG = "medical-device"
 
     @transaction.atomic
     def handle(self, *args, **options):
         # Wipe example vaults
         self._wipe_vault(self.AV_VAULT_SLUG)
         self._wipe_vault(self.AVIONICS_VAULT_SLUG)
+        self._wipe_vault(self.MEDICAL_VAULT_SLUG)
 
         # Ensure admin user exists
         admin = User.objects.filter(username="admin").first()
@@ -471,6 +478,29 @@ class Command(BaseCommand):
         self.stdout.write("Building Avionics FMS document-deliverable example...")
         self._build_avionics()
         self.stdout.write(self.style.SUCCESS("  Avionics FMS vault complete."))
+
+        # ==============================================================
+        # VAULT 3 — Medical Device (Cardiac Pacemaker)
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("\nSetting up Medical Device vault..."))
+
+        self._vault = Vault.objects.create(
+            name="Cardiac Pacemaker",
+            slug=self.MEDICAL_VAULT_SLUG,
+            description=(
+                "Implantable Cardiac Pacemaker development programme following "
+                "IEC 62304, ISO 14971, IEC 60601-1, and EU MDR / FDA 21 CFR 820."
+            ),
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+
+        self._setup_vault_schema(admin)
+
+        self.stdout.write("Building Medical Device document-deliverable example...")
+        self._build_medical()
+        self.stdout.write(self.style.SUCCESS("  Medical Device vault complete."))
 
         # ------------------------------------------------------------------
         # Summary
@@ -3408,6 +3438,1538 @@ class Command(BaseCommand):
             description=(
                 "Shows how system requirements are decomposed into "
                 "lower-level sub-requirements."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Refined By",
+                    "relation_name": "refines",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+    # ------------------------------------------------------------------
+    # Medical Device (Cardiac Pacemaker) example data
+    # ------------------------------------------------------------------
+
+    def _build_medical(self):
+        # ==============================================================
+        # TOP-LEVEL PROGRAMME
+        # ==============================================================
+        programme = self._item(
+            "project",
+            "PM-500 Implantable Cardiac Pacemaker",
+            "Top-level programme for the PM-500 dual-chamber implantable "
+            "cardiac pacemaker. Class III medical device (EU MDR Rule 8, "
+            "FDA Class III PMA). Encompasses all design control deliverables "
+            "from user needs through design validation.",
+            **{"standard-reference": "IEC 62304, ISO 14971, IEC 60601-1, EU MDR 2017/745, FDA 21 CFR 820"},
+        )
+
+        # ==============================================================
+        # PLANS
+        # ==============================================================
+        dev_plan = self._item(
+            "plan",
+            "Design and Development Plan",
+            "Defines the design control process for the PM-500 pacemaker "
+            "per FDA 21 CFR 820.30 and EU MDR Annex II. Covers design "
+            "input, output, review, verification, validation, and transfer.",
+            **{"phase": "Approved",
+               "standard-reference": "FDA 21 CFR 820.30, ISO 13485:2016 §7.3"},
+        )
+        dev_plan_purpose = self._item(
+            "information",
+            "Purpose",
+            "This plan establishes the design control procedures for the PM-500 "
+            "implantable cardiac pacemaker. It ensures systematic translation of "
+            "user needs into verified and validated design outputs, with full "
+            "traceability throughout the product lifecycle.",
+        )
+        dev_plan_scope = self._item(
+            "information",
+            "Scope",
+            "Covers the pulse generator hardware, embedded firmware (IEC 62304 "
+            "Class C software), lead interface, telemetry subsystem, and "
+            "programmer/interrogator interface. Excludes the implantable lead "
+            "itself (covered under a separate design history file).",
+        )
+        dev_plan_standards = self._item(
+            "information",
+            "Applicable Standards",
+            "IEC 62304:2006+A1:2015 (software lifecycle), ISO 14971:2019 (risk "
+            "management), IEC 60601-1:2005+A2:2020 (general safety), "
+            "IEC 60601-1-2 (EMC), ISO 14708-2 (implantable pacemakers), "
+            "AAMI TIR57 (cybersecurity), FDA guidance on premarket submissions.",
+        )
+        dev_plan_lifecycle = self._item(
+            "information",
+            "Development Lifecycle",
+            "The PM-500 follows a V-model lifecycle: user needs → design input → "
+            "system architecture → subsystem design → implementation → unit test → "
+            "integration test → system verification → design validation. Each "
+            "phase requires formal design review before proceeding.",
+        )
+        self._compose(dev_plan, dev_plan_purpose, dev_plan_scope, dev_plan_standards, dev_plan_lifecycle)
+
+        risk_plan = self._item(
+            "plan",
+            "Risk Management Plan",
+            "Defines the risk management process per ISO 14971:2019 for the PM-500. "
+            "Covers hazard identification, risk estimation, risk evaluation, risk "
+            "control, and residual risk evaluation. Risk acceptability criteria "
+            "follow the ALARP principle with absolute limits for patient safety.",
+            **{"phase": "Approved",
+               "standard-reference": "ISO 14971:2019, IEC 60601-1 §4"},
+        )
+        risk_plan_criteria = self._item(
+            "information",
+            "Risk Acceptability Criteria",
+            "Risks are evaluated on a 5×5 severity/probability matrix. For patient "
+            "safety hazards: catastrophic (death) or critical (permanent injury) risks "
+            "must be reduced to ALARP with probability ≤ 10⁻⁶ per hour. Risks that "
+            "cannot meet this threshold require explicit benefit-risk justification "
+            "per ISO 14971 §7.",
+        )
+        risk_plan_process = self._item(
+            "information",
+            "Risk Analysis Process",
+            "Systematic hazard identification using FTA, FMEA, and HAZOP. Each "
+            "identified hazard is traced to its root cause, evaluated for severity "
+            "and probability, and linked to risk control measures. Residual risk "
+            "is re-evaluated after control implementation.",
+        )
+        self._compose(risk_plan, risk_plan_criteria, risk_plan_process)
+
+        sw_plan = self._item(
+            "plan",
+            "Software Development Plan",
+            "Defines the software development lifecycle for PM-500 firmware per "
+            "IEC 62304:2006+A1:2015. Software safety classification: Class C "
+            "(can contribute to a hazardous situation resulting in death or "
+            "serious injury). Covers all software development activities, "
+            "configuration management, and problem resolution.",
+            **{"phase": "Approved",
+               "standard-reference": "IEC 62304:2006+A1:2015"},
+        )
+        sw_plan_class = self._item(
+            "information",
+            "Software Safety Classification",
+            "The PM-500 firmware is classified as IEC 62304 Class C (highest safety "
+            "class). This classification applies because: (1) the software directly "
+            "controls therapeutic pacing pulses, (2) failure to pace can result in "
+            "death, and (3) no independent hardware mechanism can fully mitigate "
+            "software failure modes.",
+        )
+        sw_plan_architecture = self._item(
+            "information",
+            "Software Architecture Overview",
+            "Three-layer architecture: (1) Hardware Abstraction Layer — ADC, timers, "
+            "telemetry radio; (2) Real-Time Kernel — deterministic scheduler with "
+            "worst-case execution time analysis; (3) Therapy Layer — sensing, "
+            "arrhythmia detection, pacing algorithms, and rate-response. Strict "
+            "memory partitioning between safety-critical and non-critical modules.",
+        )
+        sw_plan_tools = self._item(
+            "information",
+            "Development Tools and Qualification",
+            "Compiler: ARM GCC (qualified per IEC 62304 §8.1.2). Static analysis: "
+            "Polyspace, MISRA C:2012 compliance. Unit test framework: qualified test "
+            "harness with 100% MC/DC coverage for Class C modules. SOUP: FreeRTOS "
+            "(qualified per IEC 62304 §8.1.2), BLE stack (assessed for anomalies).",
+        )
+        self._compose(sw_plan, sw_plan_class, sw_plan_architecture, sw_plan_tools)
+
+        ver_plan = self._item(
+            "plan",
+            "Verification Plan",
+            "Defines the verification strategy for PM-500 design outputs. "
+            "Verification demonstrates that design outputs meet design inputs "
+            "under controlled conditions. Includes bench testing, software "
+            "testing, EMC testing, and accelerated life testing.",
+            **{"phase": "Approved",
+               "standard-reference": "FDA 21 CFR 820.30(f), IEC 60601-1"},
+        )
+        ver_plan_methods = self._item(
+            "information",
+            "Verification Methods",
+            "Test: Objective evidence from bench or automated testing. "
+            "Analysis: Mathematical or simulation-based demonstration. "
+            "Inspection: Visual or dimensional examination. "
+            "Demonstration: Functional operation under nominal conditions. "
+            "Each design input specifies its required verification method.",
+        )
+        self._compose(ver_plan, ver_plan_methods)
+
+        val_plan = self._item(
+            "plan",
+            "Validation Plan",
+            "Defines design validation to confirm the PM-500 meets user needs "
+            "and intended use under actual or simulated use conditions. Includes "
+            "pre-clinical bench testing, animal studies (ovine model), and "
+            "clinical investigation (IDE).",
+            **{"phase": "Approved",
+               "standard-reference": "FDA 21 CFR 820.30(g), EU MDR Annex XV"},
+        )
+        val_plan_clinical = self._item(
+            "information",
+            "Clinical Investigation Strategy",
+            "Multi-centre, prospective, non-randomised clinical study in 500 "
+            "patients with bradycardia requiring dual-chamber pacing. Primary "
+            "endpoints: pacing capture threshold stability (6 months), freedom "
+            "from system-related serious adverse events. Study conducted under "
+            "FDA IDE and EU MDR Article 62.",
+        )
+        self._compose(val_plan, val_plan_clinical)
+
+        cybersec_plan = self._item(
+            "plan",
+            "Cybersecurity Plan",
+            "Defines the cybersecurity risk management process for the PM-500 "
+            "per AAMI TIR57 and FDA premarket cybersecurity guidance. Covers "
+            "threat modelling, security requirements, penetration testing, "
+            "and post-market vulnerability management.",
+            **{"phase": "Approved",
+               "standard-reference": "AAMI TIR57:2016, FDA Cybersecurity Guidance 2023"},
+        )
+        cybersec_plan_threat_model = self._item(
+            "information",
+            "Threat Modelling Approach",
+            "STRIDE-based threat modelling applied to all external interfaces: "
+            "RF telemetry (proprietary near-field), BLE (programmer link), and "
+            "remote monitoring uplink. Attack surface analysis considers the "
+            "implanted device, the clinical programmer, and the home monitor.",
+        )
+        self._compose(cybersec_plan, cybersec_plan_threat_model)
+
+        # ==============================================================
+        # TOP-LEVEL SECTIONS (Design History File structure)
+        # ==============================================================
+        section_plans = self._item(
+            "project",
+            "Planning",
+            "All planning documents for the PM-500 design control process: "
+            "development plan, risk management plan, software lifecycle plan, "
+            "verification plan, validation plan, and cybersecurity plan.",
+        )
+        section_design_input = self._item(
+            "project",
+            "Design Input",
+            "User needs and design input specifications that define what the "
+            "PM-500 must do. Covers system, software, hardware, cybersecurity, "
+            "and biocompatibility requirements per FDA 21 CFR 820.30(c).",
+        )
+        section_risk = self._item(
+            "project",
+            "Risk Management",
+            "ISO 14971 risk management documentation: risk management file, "
+            "failure mode analyses (hardware FMEA, software FMEA, use-related "
+            "FMEA), and fault tree analysis.",
+        )
+        section_verification = self._item(
+            "project",
+            "Design Verification",
+            "Design verification evidence demonstrating that design outputs "
+            "meet design inputs under controlled conditions per "
+            "FDA 21 CFR 820.30(f).",
+        )
+        section_validation = self._item(
+            "project",
+            "Design Validation",
+            "Design validation evidence confirming the PM-500 meets user needs "
+            "and intended use under actual or simulated conditions per "
+            "FDA 21 CFR 820.30(g). Includes pre-clinical and clinical data.",
+        )
+        section_cybersecurity = self._item(
+            "project",
+            "Cybersecurity",
+            "Cybersecurity risk management per AAMI TIR57 and FDA premarket "
+            "cybersecurity guidance: threat assessment, vulnerability analysis, "
+            "and security controls.",
+        )
+
+        self._compose(programme, section_plans, section_design_input,
+                       section_risk, section_verification, section_validation,
+                       section_cybersecurity)
+
+        # -- Plans under Planning section --
+        self._compose(section_plans, dev_plan, risk_plan, sw_plan, ver_plan,
+                       val_plan, cybersec_plan)
+
+        # ==============================================================
+        # SPECIFICATIONS (under Design Input)
+        # ==============================================================
+        user_needs = self._item(
+            "specification",
+            "User Needs Document",
+            "Captures the needs of intended users (cardiologists, EP specialists, "
+            "patients) and the clinical context of use for the PM-500 dual-chamber "
+            "pacemaker. These form the basis for all design inputs.",
+            **{"standard-reference": "FDA 21 CFR 820.30(c), EU MDR Annex I §1",
+               "baseline": "1.0"},
+        )
+
+        sys_req_spec = self._item(
+            "specification",
+            "System Requirements Specification",
+            "Top-level design inputs for the PM-500 pulse generator, derived from "
+            "user needs and regulatory requirements. Covers functional, performance, "
+            "safety, biocompatibility, and EMC requirements.",
+            **{"standard-reference": "IEC 60601-1, ISO 14708-2",
+               "baseline": "2.1"},
+        )
+
+        sw_req_spec = self._item(
+            "specification",
+            "Software Requirements Specification",
+            "Software-level requirements for PM-500 firmware derived from the "
+            "system requirements specification. Covers all IEC 62304 Class C "
+            "software items: sensing, pacing, arrhythmia detection, telemetry, "
+            "and diagnostics.",
+            **{"standard-reference": "IEC 62304:2006+A1:2015 §5.2",
+               "baseline": "3.0"},
+        )
+
+        hw_req_spec = self._item(
+            "specification",
+            "Hardware Requirements Specification",
+            "Hardware design inputs for the PM-500 pulse generator: output stage, "
+            "sensing amplifiers, microcontroller, power management, telemetry "
+            "radio, hermetic enclosure, and header/connector.",
+            **{"standard-reference": "IEC 60601-1, ISO 14708-2",
+               "baseline": "1.2"},
+        )
+
+        cybersec_req_spec = self._item(
+            "specification",
+            "Cybersecurity Requirements Specification",
+            "Security design inputs for the PM-500 covering authentication, "
+            "encryption, integrity verification, access control, and "
+            "software update mechanisms.",
+            **{"standard-reference": "AAMI TIR57, FDA Cybersecurity Guidance",
+               "baseline": "1.0"},
+        )
+
+        biocompat_spec = self._item(
+            "specification",
+            "Biocompatibility Evaluation Plan",
+            "Defines the biological safety evaluation strategy per ISO 10993-1 "
+            "for all patient-contacting materials: titanium enclosure, epoxy "
+            "header, silicone seal, and connector contacts.",
+            **{"standard-reference": "ISO 10993-1:2018",
+               "baseline": "1.0"},
+        )
+
+        self._compose(section_design_input, user_needs, sys_req_spec, sw_req_spec,
+                       hw_req_spec, cybersec_req_spec, biocompat_spec)
+
+        # ==============================================================
+        # RISK MANAGEMENT (under Risk Management section)
+        # ==============================================================
+        risk_mgmt_file = self._item(
+            "report",
+            "Risk Management File",
+            "Comprehensive risk management documentation per ISO 14971:2019 "
+            "including hazard analysis, risk estimation, risk evaluation, "
+            "risk control records, and residual risk evaluation.",
+            **{"report-status": "Draft"},
+        )
+
+        hw_fmea = self._item(
+            "analysis",
+            "Hardware FMEA — Pulse Generator",
+            "Failure Mode and Effects Analysis for the PM-500 pulse generator "
+            "hardware: output stage, sensing front-end, power supply, "
+            "microcontroller, and telemetry subsystem.",
+            **{"method": "FMEA",
+               "standard-reference": "IEC 60812, ISO 14971"},
+        )
+        sw_fmea = self._item(
+            "analysis",
+            "Software FMEA — Firmware",
+            "Failure Mode and Effects Analysis for PM-500 firmware modules: "
+            "sensing algorithm, pacing engine, arrhythmia detection, "
+            "rate-response, telemetry protocol, and diagnostics.",
+            **{"method": "FMEA",
+               "standard-reference": "IEC 60812, IEC 62304"},
+        )
+        fta_pacing = self._item(
+            "analysis",
+            "Fault Tree Analysis — Loss of Pacing",
+            "Top-level undesired event: complete loss of therapeutic pacing. "
+            "Analyses all single-point and common-cause failures that could "
+            "lead to pacing cessation in a pacemaker-dependent patient.",
+            **{"method": "FTA",
+               "standard-reference": "IEC 61025, ISO 14971"},
+        )
+        use_fmea = self._item(
+            "analysis",
+            "Use-Related FMEA",
+            "Analysis of use errors during implantation, programming, and "
+            "follow-up that could lead to patient harm. Covers the clinical "
+            "programmer interface and home monitoring setup.",
+            **{"method": "FMEA",
+               "standard-reference": "IEC 62366-1:2015, ISO 14971"},
+        )
+
+        self._compose(section_risk, risk_mgmt_file, hw_fmea, sw_fmea,
+                       fta_pacing, use_fmea)
+
+        # ==============================================================
+        # DESIGN VERIFICATION (under Verification section)
+        # ==============================================================
+        ver_report = self._item(
+            "report",
+            "Verification Report",
+            "Consolidated results from all verification activities: bench "
+            "testing, software testing, EMC testing, electrical safety testing, "
+            "and accelerated life testing.",
+            **{"report-status": "Draft"},
+        )
+        sw_test_report = self._item(
+            "report",
+            "Software Test Report",
+            "Consolidated software verification results per IEC 62304. "
+            "Unit test, integration test, and system test results with "
+            "coverage metrics (100% MC/DC for Class C modules).",
+            **{"report-status": "Draft"},
+        )
+
+        self._compose(section_verification, ver_report, sw_test_report)
+
+        # ==============================================================
+        # DESIGN VALIDATION (under Validation section)
+        # ==============================================================
+        val_report = self._item(
+            "report",
+            "Validation Report",
+            "Results from design validation including pre-clinical bench testing, "
+            "animal study results, and clinical investigation data.",
+            **{"report-status": "Draft"},
+        )
+        biocompat_report = self._item(
+            "report",
+            "Biocompatibility Test Report",
+            "Results of ISO 10993 biological evaluation: cytotoxicity, "
+            "sensitisation, irritation, systemic toxicity, genotoxicity, "
+            "implantation, and chronic toxicity studies.",
+            **{"report-status": "Draft"},
+        )
+
+        self._compose(section_validation, val_report, biocompat_report)
+
+        # ==============================================================
+        # CYBERSECURITY (under Cybersecurity section)
+        # ==============================================================
+        threat_assessment = self._item(
+            "analysis",
+            "Cybersecurity Threat Assessment",
+            "STRIDE-based threat assessment for the PM-500 communication "
+            "interfaces: near-field RF telemetry, BLE programmer link, "
+            "and remote monitoring uplink.",
+            **{"method": "Other",
+               "standard-reference": "AAMI TIR57, IEC 81001-5-1"},
+        )
+
+        self._compose(section_cybersecurity, threat_assessment)
+
+        # ==============================================================
+        # SYSTEM-LEVEL REQUIREMENTS (in sys_req_spec)
+        # ==============================================================
+        req_pacing_output = self._item(
+            "requirement",
+            "Pacing Output Range",
+            "The pulse generator shall deliver pacing pulses with amplitude "
+            "0.25 V to 7.5 V and pulse width 0.1 ms to 1.5 ms, independently "
+            "configurable for atrial and ventricular channels.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sensing = self._item(
+            "requirement",
+            "Sensing Sensitivity",
+            "The device shall sense intrinsic cardiac signals with configurable "
+            "sensitivity: atrial 0.25 mV to 4.0 mV, ventricular 1.0 mV to "
+            "12.0 mV. Sensing must reject T-waves and far-field signals.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_battery_life = self._item(
+            "requirement",
+            "Battery Longevity",
+            "The device shall provide a minimum of 10 years of operation at "
+            "nominal settings (dual-chamber DDD mode, 60 bpm base rate, "
+            "2.5 V output, 0.4 ms pulse width, 500 Ω impedance).",
+            **{"priority": "Critical",
+               "verification-method": "Analysis"},
+        )
+        req_eri = self._item(
+            "requirement",
+            "Elective Replacement Indicator",
+            "The device shall provide an Elective Replacement Indicator (ERI) "
+            "when remaining battery capacity falls below a threshold ensuring "
+            "≥ 6 months of continued operation at programmed settings. The "
+            "device shall switch to VVI backup pacing at End of Service (EOS).",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_rate_response = self._item(
+            "requirement",
+            "Rate-Responsive Pacing",
+            "The device shall support rate-responsive pacing (DDDR mode) "
+            "using an accelerometer-based activity sensor, with programmable "
+            "lower rate 40–100 bpm and upper sensor rate 100–180 bpm.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_emc = self._item(
+            "requirement",
+            "Electromagnetic Compatibility",
+            "The device shall maintain safe operation when exposed to "
+            "electromagnetic fields per IEC 60601-1-2. The device shall not "
+            "deliver inappropriate therapy or inhibit required pacing during "
+            "EMI exposure up to specified immunity levels.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_mri_conditional = self._item(
+            "requirement",
+            "MRI Conditional Labelling",
+            "The device shall support an MRI-conditional mode that, when "
+            "programmed prior to MR scan, ensures patient safety during "
+            "1.5 T and 3.0 T MRI under specified conditions (SAR limits, "
+            "gradient slew rate). Pacing shall revert to asynchronous mode "
+            "to prevent inhibition from MRI-induced signals.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_hermeticity = self._item(
+            "requirement",
+            "Hermetic Seal Integrity",
+            "The titanium enclosure shall maintain hermeticity with a helium "
+            "leak rate ≤ 1 × 10⁻⁹ atm·cc/sec throughout the device lifetime. "
+            "The header-case seal shall withstand implant stresses without "
+            "degradation.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_biocompat = self._item(
+            "requirement",
+            "Biocompatibility",
+            "All patient-contacting materials (titanium case, epoxy header, "
+            "silicone seals, connector contacts) shall be biocompatible per "
+            "ISO 10993-1 for long-term implantation (> 30 days). Materials "
+            "shall not elicit cytotoxic, sensitising, or irritating responses.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_defibrillation = self._item(
+            "requirement",
+            "Defibrillation Protection",
+            "The device shall withstand external defibrillation shocks up to "
+            "360 J (monophasic) and 200 J (biphasic) without permanent damage "
+            "to the pulse generator. The device shall resume programmed "
+            "operation within 5 seconds after defibrillation.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+
+        self._compose(sys_req_spec, req_pacing_output, req_sensing, req_battery_life,
+                       req_eri, req_rate_response, req_emc, req_mri_conditional,
+                       req_hermeticity, req_biocompat, req_defibrillation)
+
+        # ==============================================================
+        # SOFTWARE REQUIREMENTS (in sw_req_spec)
+        # ==============================================================
+        req_sw_sensing_algo = self._item(
+            "requirement",
+            "Cardiac Signal Sensing Algorithm",
+            "The firmware shall implement digital bandpass filtering (10–100 Hz) "
+            "and adaptive threshold sensing with automatic sensitivity adjustment. "
+            "The algorithm shall correctly classify ≥ 99.5% of intrinsic events "
+            "and reject ≥ 99% of far-field and noise artefacts.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sw_pacing_engine = self._item(
+            "requirement",
+            "Pacing Timing Engine",
+            "The firmware shall implement DDD/DDDR timing cycles with "
+            "programmable AV delay (50–300 ms), PVARP (150–500 ms), and "
+            "ventricular blanking (15–100 ms). Timing precision shall be "
+            "≤ 1 ms for all intervals.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sw_arrhythmia = self._item(
+            "requirement",
+            "Mode Switch on Atrial Tachyarrhythmia",
+            "The firmware shall detect sustained atrial tachyarrhythmia "
+            "(rate > programmable threshold, default 180 bpm, for > N "
+            "consecutive beats) and automatically switch to DDIR/VVIR "
+            "mode to prevent tracking. Mode switch shall occur within "
+            "≤ 2 seconds of detection.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sw_diagnostics = self._item(
+            "requirement",
+            "Diagnostic Data Logging",
+            "The firmware shall record pacing/sensing event histograms, "
+            "lead impedance trends, battery voltage trends, arrhythmia "
+            "episodes (with stored EGMs), and mode switch events. Minimum "
+            "storage: 60 episodes with 10 seconds of EGM each.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+        req_sw_telemetry = self._item(
+            "requirement",
+            "Telemetry Communication Protocol",
+            "The firmware shall support bidirectional telemetry at ≥ 200 kbps "
+            "for programming and interrogation sessions. Communication shall "
+            "use authenticated and encrypted links per the cybersecurity "
+            "requirements. Telemetry range: 5–10 cm (near-field).",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sw_watchdog = self._item(
+            "requirement",
+            "Safety Watchdog and Backup Pacing",
+            "The firmware shall implement an independent hardware watchdog timer "
+            "with a ≤ 1.5 second timeout. If the main therapy task fails to "
+            "service the watchdog, the system shall revert to VVI backup pacing "
+            "at 70 bpm with fixed 5.0 V output within ≤ 2 seconds.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+
+        self._compose(sw_req_spec, req_sw_sensing_algo, req_sw_pacing_engine,
+                       req_sw_arrhythmia, req_sw_diagnostics, req_sw_telemetry,
+                       req_sw_watchdog)
+
+        # Derive software reqs from system reqs
+        self._derives(req_sw_sensing_algo, req_sensing)
+        self._derives(req_sw_pacing_engine, req_pacing_output)
+        self._derives(req_sw_arrhythmia, req_sensing)
+        self._derives(req_sw_telemetry, req_pacing_output)
+        self._derives(req_sw_watchdog, req_pacing_output)
+
+        # ==============================================================
+        # CYBERSECURITY REQUIREMENTS (in cybersec_req_spec)
+        # ==============================================================
+        req_sec_auth = self._item(
+            "requirement",
+            "Telemetry Authentication",
+            "The device shall authenticate the clinical programmer before "
+            "accepting any programming commands. Authentication shall use a "
+            "challenge-response protocol with device-unique keys. Failed "
+            "authentication attempts shall be logged.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sec_encrypt = self._item(
+            "requirement",
+            "Telemetry Encryption",
+            "All telemetry data containing patient health information or "
+            "device parameters shall be encrypted using AES-128 or stronger. "
+            "Key exchange shall use ECDH with NIST P-256 or equivalent.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sec_integrity = self._item(
+            "requirement",
+            "Firmware Integrity Verification",
+            "The device shall verify firmware integrity at boot using a "
+            "cryptographic hash (SHA-256 minimum). If integrity verification "
+            "fails, the device shall enter safe mode (VVI backup pacing) "
+            "and log the failure.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sec_update = self._item(
+            "requirement",
+            "Secure Firmware Update",
+            "Firmware updates shall be digitally signed by the manufacturer. "
+            "The device shall verify the signature before applying any update. "
+            "Updates shall not interrupt ongoing therapy; the update process "
+            "shall be atomic (complete or roll back).",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sec_audit = self._item(
+            "requirement",
+            "Security Event Logging",
+            "The device shall log security-relevant events including: "
+            "authentication attempts (success/failure), programming session "
+            "start/end, firmware update attempts, and integrity check failures. "
+            "Logs shall be non-volatile and accessible during interrogation.",
+            **{"priority": "High",
+               "verification-method": "Test"},
+        )
+
+        self._compose(cybersec_req_spec, req_sec_auth, req_sec_encrypt,
+                       req_sec_integrity, req_sec_update, req_sec_audit)
+
+        # ==============================================================
+        # REQUIREMENT DECOMPOSITION — Sensing
+        # ==============================================================
+        req_sense_filter = self._item(
+            "requirement",
+            "Bandpass Filter — 10 to 100 Hz",
+            "The sensing front-end shall implement a digital bandpass filter "
+            "with -3 dB corners at 10 Hz and 100 Hz (±10%) to reject "
+            "baseline wander and high-frequency noise.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sense_threshold = self._item(
+            "requirement",
+            "Adaptive Threshold — 75% Decay",
+            "After each sensed event, the detection threshold shall decay "
+            "from 75% of the measured amplitude with a programmable time "
+            "constant (150–500 ms) to the programmed floor sensitivity.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        req_sense_refractory = self._item(
+            "requirement",
+            "Refractory Period — Noise Rejection",
+            "A post-sense refractory period (programmable 100–400 ms) shall "
+            "blank the sensing channel to prevent T-wave and after-potential "
+            "oversensing.",
+            **{"priority": "Critical",
+               "verification-method": "Test"},
+        )
+        self._refines(req_sw_sensing_algo, req_sense_filter, req_sense_threshold, req_sense_refractory)
+
+        # ==============================================================
+        # FAILURE MODES — Hardware FMEA
+        # ==============================================================
+        fm_output_open = self._item(
+            "failure-mode",
+            "Output Stage Open Circuit",
+            "Loss of pacing output due to open-circuit failure in the output "
+            "capacitor or switching transistor. Patient impact: loss of pacing "
+            "therapy — life-threatening for pacemaker-dependent patients.",
+            **{"severity": "Critical"},
+        )
+        fm_output_short = self._item(
+            "failure-mode",
+            "Output Stage Short to Ground",
+            "Continuous current drain through output stage short circuit. "
+            "Results in rapid battery depletion and loss of therapy. May "
+            "also cause tissue damage at the electrode-myocardium interface.",
+            **{"severity": "Critical"},
+        )
+        fm_sensing_loss = self._item(
+            "failure-mode",
+            "Loss of Cardiac Sensing",
+            "Failure to detect intrinsic cardiac activity due to amplifier "
+            "failure or ADC malfunction. Results in asynchronous pacing with "
+            "risk of R-on-T stimulation and ventricular fibrillation.",
+            **{"severity": "Critical"},
+        )
+        fm_battery_premature = self._item(
+            "failure-mode",
+            "Premature Battery Depletion",
+            "Battery reaches EOS earlier than predicted due to internal "
+            "short, elevated self-discharge, or excessive current drain. "
+            "Patient impact: unexpected loss of therapy.",
+            **{"severity": "Critical"},
+        )
+        fm_telemetry_failure = self._item(
+            "failure-mode",
+            "Telemetry Communication Failure",
+            "Inability to interrogate or programme the device due to RF "
+            "front-end failure. Device continues pacing at last programmed "
+            "settings but cannot be reprogrammed non-invasively.",
+            **{"severity": "High"},
+        )
+        fm_header_leak = self._item(
+            "failure-mode",
+            "Header Seal Breach",
+            "Ingress of body fluids through degraded header seal. Causes "
+            "current leakage, corrosion of internal components, and "
+            "progressive loss of device function.",
+            **{"severity": "Critical"},
+        )
+
+        self._compose(hw_fmea, fm_output_open, fm_output_short, fm_sensing_loss,
+                       fm_battery_premature, fm_telemetry_failure, fm_header_leak)
+
+        # Failure causes
+        fc_capacitor_aging = self._item(
+            "failure-cause",
+            "Output Capacitor Dielectric Degradation",
+            "Age-related degradation of tantalum capacitor dielectric leading "
+            "to increased ESR and eventual open-circuit failure.",
+            **{"category": "Manufacturing"},
+        )
+        fc_mosfet_breakdown = self._item(
+            "failure-cause",
+            "MOSFET Gate Oxide Breakdown",
+            "Time-dependent dielectric breakdown of the output MOSFET gate "
+            "oxide under sustained electric field stress.",
+            **{"category": "Design"},
+        )
+        fc_amplifier_drift = self._item(
+            "failure-cause",
+            "Sense Amplifier Offset Drift",
+            "Progressive drift of the sense amplifier input offset voltage "
+            "due to ionic contamination or radiation damage, reducing "
+            "effective sensitivity below the programmed threshold.",
+            **{"category": "Environmental"},
+        )
+        fc_cell_defect = self._item(
+            "failure-cause",
+            "Battery Cell Manufacturing Defect",
+            "Lithium-iodine cell with internal defect (contamination, "
+            "separator pinhole) causing elevated self-discharge rate.",
+            **{"category": "Manufacturing"},
+        )
+        fc_seal_fatigue = self._item(
+            "failure-cause",
+            "Epoxy-Titanium Bond Fatigue",
+            "Cyclic thermal and mechanical stress at the epoxy-titanium "
+            "interface leading to micro-crack propagation and eventual "
+            "seal breach.",
+            **{"category": "Environmental"},
+        )
+
+        self._compose(hw_fmea, fc_capacitor_aging, fc_mosfet_breakdown,
+                       fc_amplifier_drift, fc_cell_defect, fc_seal_fatigue)
+        self._causes(fc_capacitor_aging, fm_output_open)
+        self._causes(fc_mosfet_breakdown, fm_output_short)
+        self._causes(fc_amplifier_drift, fm_sensing_loss)
+        self._causes(fc_cell_defect, fm_battery_premature)
+        self._causes(fc_seal_fatigue, fm_header_leak)
+
+        # Link failure modes to challenged requirements
+        self._mitigates(fm_output_open, req_pacing_output)
+        self._mitigates(fm_output_short, req_pacing_output, req_battery_life)
+        self._mitigates(fm_sensing_loss, req_sensing)
+        self._mitigates(fm_battery_premature, req_battery_life, req_eri)
+        self._mitigates(fm_header_leak, req_hermeticity)
+
+        # ==============================================================
+        # FAILURE MODES — Software FMEA
+        # ==============================================================
+        fm_sw_timing = self._item(
+            "failure-mode",
+            "Pacing Timing Violation",
+            "Firmware timing error causing AV delay, blanking period, or "
+            "refractory period outside specified bounds. May result in "
+            "competitive pacing, undersensing, or pacemaker-mediated "
+            "tachycardia.",
+            **{"severity": "Critical"},
+        )
+        fm_sw_mode_switch = self._item(
+            "failure-mode",
+            "Failure to Mode-Switch",
+            "Software fails to detect atrial tachyarrhythmia and continues "
+            "tracking, resulting in ventricular pacing at dangerously high "
+            "rates (pacemaker-mediated tachycardia).",
+            **{"severity": "Critical"},
+        )
+        fm_sw_watchdog = self._item(
+            "failure-mode",
+            "Watchdog Failure to Trip",
+            "Both the main therapy task and the watchdog supervisor fail "
+            "simultaneously (common-cause failure), resulting in no pacing "
+            "output with no automatic recovery.",
+            **{"severity": "Critical"},
+        )
+        fm_sw_memory = self._item(
+            "failure-mode",
+            "Parameter Memory Corruption",
+            "Corruption of programmed therapy parameters in non-volatile "
+            "memory (e.g., due to SEU or write failure). Device operates "
+            "with incorrect pacing parameters.",
+            **{"severity": "Critical"},
+        )
+
+        self._compose(sw_fmea, fm_sw_timing, fm_sw_mode_switch, fm_sw_watchdog, fm_sw_memory)
+
+        fc_sw_race = self._item(
+            "failure-cause",
+            "Task Scheduling Race Condition",
+            "Race condition between the sensing ISR and the pacing timer "
+            "task causing AV interval miscalculation.",
+            **{"category": "Software"},
+        )
+        fc_sw_threshold = self._item(
+            "failure-cause",
+            "Detection Threshold Algorithm Error",
+            "Incorrect threshold adaptation logic during rapid atrial rates "
+            "causes under-counting of atrial events.",
+            **{"category": "Software"},
+        )
+        fc_sw_stack = self._item(
+            "failure-cause",
+            "Stack Overflow in Therapy Task",
+            "Unbounded recursion or excessive local variable allocation "
+            "causing stack overflow and corruption of the therapy task "
+            "context, freezing both therapy and watchdog.",
+            **{"category": "Software"},
+        )
+        fc_sw_eeprom = self._item(
+            "failure-cause",
+            "EEPROM Write Interrupted by Reset",
+            "Power-on reset during EEPROM parameter write leaves parameter "
+            "block in inconsistent state.",
+            **{"category": "Software"},
+        )
+
+        self._compose(sw_fmea, fc_sw_race, fc_sw_threshold, fc_sw_stack, fc_sw_eeprom)
+        self._causes(fc_sw_race, fm_sw_timing)
+        self._causes(fc_sw_threshold, fm_sw_mode_switch)
+        self._causes(fc_sw_stack, fm_sw_watchdog)
+        self._causes(fc_sw_eeprom, fm_sw_memory)
+
+        # ==============================================================
+        # RISKS
+        # ==============================================================
+        risk_oversensing = self._item(
+            "risk",
+            "Electromagnetic Interference Causing Oversensing",
+            "Patient exposure to strong electromagnetic fields (MRI, "
+            "electrosurgery, theft-detection systems) causes oversensing "
+            "and inappropriate pacing inhibition in a pacemaker-dependent "
+            "patient, leading to syncope or asystole.",
+            **{"severity": "Critical",
+               "likelihood": "Possible",
+               "mitigation": "EMI-resistant sensing filters, programmable EMI "
+                             "rejection mode, MRI-conditional design, patient "
+                             "labelling and education"},
+        )
+        risk_lead_dislodge = self._item(
+            "risk",
+            "Lead Dislodgement Post-Implant",
+            "Atrial or ventricular lead tip displaces from the myocardium "
+            "within the first weeks after implantation, resulting in loss "
+            "of capture and/or sensing. Requires surgical lead repositioning.",
+            **{"severity": "High",
+               "likelihood": "Possible",
+               "mitigation": "Active-fixation lead design, automatic capture "
+                             "management algorithm, high-output safety margin, "
+                             "post-implant threshold testing protocol"},
+        )
+        risk_infection = self._item(
+            "risk",
+            "Device Pocket Infection",
+            "Bacterial infection of the pacemaker pocket site. Can progress "
+            "to lead endocarditis if untreated, requiring complete system "
+            "extraction — a high-risk procedure.",
+            **{"severity": "Critical",
+               "likelihood": "Unlikely",
+               "mitigation": "Antimicrobial envelope, strict sterile implant "
+                             "technique, perioperative antibiotics, smooth "
+                             "titanium surface finish to resist biofilm"},
+        )
+        risk_cyber_attack = self._item(
+            "risk",
+            "Unauthorised Wireless Reprogramming",
+            "A malicious actor intercepts or spoofs the telemetry link to "
+            "alter therapy parameters (e.g., set output to 0 V or maximum "
+            "rate), potentially causing harm or death.",
+            **{"severity": "Critical",
+               "likelihood": "Rare",
+               "mitigation": "Authenticated telemetry, proximity requirement "
+                             "(near-field only), encrypted communication, "
+                             "anomalous command rejection, security event logging"},
+        )
+        risk_premature_eos = self._item(
+            "risk",
+            "Premature End of Service",
+            "Device reaches EOS significantly earlier than predicted battery "
+            "longevity, requiring unplanned generator replacement surgery. "
+            "Patient safety risk if ERI notification is missed.",
+            **{"severity": "High",
+               "likelihood": "Unlikely",
+               "mitigation": "Conservative battery capacity derating, redundant "
+                             "ERI/EOS detection, remote monitoring alerts, "
+                             "accelerated life testing during verification"},
+        )
+        risk_sw_anomaly = self._item(
+            "risk",
+            "Software Anomaly During Therapy Delivery",
+            "Firmware defect causes incorrect pacing behaviour (wrong rate, "
+            "wrong output, failure to pace). Given Class C software classification, "
+            "this is a life-threatening risk for dependent patients.",
+            **{"severity": "Critical",
+               "likelihood": "Unlikely",
+               "mitigation": "IEC 62304 Class C processes, 100% MC/DC coverage, "
+                             "independent hardware watchdog with backup pacing, "
+                             "formal code review, static analysis (MISRA C)"},
+        )
+        risk_recall = self._item(
+            "risk",
+            "Field Safety Corrective Action (Recall)",
+            "Post-market detection of a systematic defect requiring field "
+            "corrective action. For implantable devices, software updates "
+            "can mitigate some issues, but hardware defects may require "
+            "surgical explant.",
+            **{"severity": "Critical",
+               "likelihood": "Rare",
+               "mitigation": "Design for remote software update capability, "
+                             "comprehensive pre-market verification, robust "
+                             "post-market surveillance, complaint trending"},
+        )
+
+        self._compose(risk_mgmt_file, risk_oversensing, risk_lead_dislodge,
+                       risk_infection, risk_cyber_attack, risk_premature_eos,
+                       risk_sw_anomaly, risk_recall)
+
+        # Link risks to challenged requirements
+        self._mitigates(risk_oversensing, req_emc, req_sensing)
+        self._mitigates(risk_cyber_attack, req_sec_auth, req_sec_encrypt)
+        self._mitigates(risk_premature_eos, req_battery_life, req_eri)
+        self._mitigates(risk_sw_anomaly, req_sw_pacing_engine, req_sw_watchdog)
+
+        # ==============================================================
+        # THREATS & VULNERABILITIES (Cybersecurity)
+        # ==============================================================
+        threat_replay = self._item(
+            "threat",
+            "Telemetry Replay Attack",
+            "Attacker captures legitimate telemetry session traffic and "
+            "replays programming commands to alter device settings. Requires "
+            "proximity to the patient during a programming session.",
+            **{"threat-level": "High",
+               "attack-vector": "Adjacent",
+               "threat-agent": "Skilled individual with SDR equipment"},
+        )
+        threat_firmware_tamper = self._item(
+            "threat",
+            "Malicious Firmware Injection",
+            "Attacker exploits the firmware update mechanism to install "
+            "modified firmware that alters therapy delivery or exfiltrates "
+            "patient data.",
+            **{"threat-level": "Critical",
+               "attack-vector": "Adjacent",
+               "threat-agent": "Nation-state actor or sophisticated attacker"},
+        )
+        threat_dos = self._item(
+            "threat",
+            "Telemetry Denial of Service",
+            "Attacker floods the telemetry interface with spurious requests, "
+            "preventing legitimate programmer communication during a clinical "
+            "session. Does not directly affect therapy delivery.",
+            **{"threat-level": "Medium",
+               "attack-vector": "Adjacent",
+               "threat-agent": "Disgruntled individual with RF equipment"},
+        )
+        threat_data_exfil = self._item(
+            "threat",
+            "Patient Data Exfiltration",
+            "Attacker eavesdrops on unencrypted telemetry to extract patient "
+            "health information (pacing history, arrhythmia episodes, device "
+            "parameters).",
+            **{"threat-level": "High",
+               "attack-vector": "Adjacent",
+               "threat-agent": "Eavesdropper with RF receiver"},
+        )
+
+        vuln_no_replay_protect = self._item(
+            "vulnerability",
+            "Lack of Replay Protection in Telemetry Protocol",
+            "Telemetry protocol does not include nonce or timestamp validation, "
+            "allowing captured commands to be replayed.",
+            **{"severity": "High",
+               "attack-feasibility": "Medium",
+               "component": "Telemetry protocol stack"},
+        )
+        vuln_unsigned_fw = self._item(
+            "vulnerability",
+            "Unsigned Firmware Update Package",
+            "Firmware update mechanism accepts update packages without "
+            "cryptographic signature verification.",
+            **{"severity": "Critical",
+               "attack-feasibility": "Medium",
+               "component": "Bootloader"},
+        )
+        vuln_unencrypted_telem = self._item(
+            "vulnerability",
+            "Unencrypted Telemetry Data Transmission",
+            "Patient health data and device parameters transmitted in "
+            "cleartext over the telemetry link.",
+            **{"severity": "High",
+               "attack-feasibility": "High",
+               "component": "Telemetry protocol stack"},
+        )
+        vuln_no_rate_limit = self._item(
+            "vulnerability",
+            "No Rate Limiting on Telemetry Requests",
+            "Telemetry interface processes all incoming requests without "
+            "rate limiting or session management.",
+            **{"severity": "Medium",
+               "attack-feasibility": "High",
+               "component": "Telemetry RF front-end"},
+        )
+
+        self._compose(threat_assessment, threat_replay, threat_firmware_tamper,
+                       threat_dos, threat_data_exfil,
+                       vuln_no_replay_protect, vuln_unsigned_fw,
+                       vuln_unencrypted_telem, vuln_no_rate_limit)
+
+        self._exploits(threat_replay, vuln_no_replay_protect)
+        self._exploits(threat_firmware_tamper, vuln_unsigned_fw)
+        self._exploits(threat_dos, vuln_no_rate_limit)
+        self._exploits(threat_data_exfil, vuln_unencrypted_telem)
+
+        # Mitigations
+        mit_auth_protocol = self._item(
+            "mitigation",
+            "Challenge-Response Authentication Protocol",
+            "Implement mutual authentication using ECDSA challenge-response "
+            "with device-unique keys stored in secure element. Includes "
+            "nonce to prevent replay attacks.",
+            **{"control-type": "Preventive",
+               "implementation-status": "In Progress"},
+        )
+        mit_fw_signing = self._item(
+            "mitigation",
+            "Firmware Code Signing with Secure Boot",
+            "All firmware images signed with manufacturer ECDSA key. "
+            "Bootloader verifies signature chain before executing any code. "
+            "Fuse-locked root of trust in hardware.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Implemented"},
+        )
+        mit_encryption = self._item(
+            "mitigation",
+            "AES-128-CCM Telemetry Encryption",
+            "All telemetry data encrypted using AES-128 in CCM mode providing "
+            "both confidentiality and authenticity. Session keys derived via "
+            "ECDH key exchange.",
+            **{"control-type": "Preventive",
+               "implementation-status": "In Progress"},
+        )
+        mit_rate_limit = self._item(
+            "mitigation",
+            "Telemetry Request Rate Limiting",
+            "Implement connection rate limiting and session management in the "
+            "RF front-end. Maximum 3 concurrent sessions, with exponential "
+            "back-off on authentication failure.",
+            **{"control-type": "Preventive",
+               "implementation-status": "Planned"},
+        )
+
+        self._compose(threat_assessment, mit_auth_protocol, mit_fw_signing,
+                       mit_encryption, mit_rate_limit)
+        self._mitigates(mit_auth_protocol, vuln_no_replay_protect)
+        self._mitigates(mit_fw_signing, vuln_unsigned_fw)
+        self._mitigates(mit_encryption, vuln_unencrypted_telem)
+        self._mitigates(mit_rate_limit, vuln_no_rate_limit)
+
+        # ==============================================================
+        # TEST CASES — System Verification
+        # ==============================================================
+        tc_pacing_range = self._item(
+            "test-case",
+            "Pacing Output Range Verification",
+            "Verify pacing pulse amplitude and width across full programmable "
+            "range on both atrial and ventricular channels.",
+            **{"test-steps": "1. Connect device to electronic load (500 Ω)\n"
+                             "2. Programme each amplitude/width combination\n"
+                             "3. Measure output on oscilloscope\n"
+                             "4. Verify within ±5% of programmed value",
+               "expected-result": "All amplitude/width combinations within ±5% tolerance"},
+        )
+        tc_sensing_threshold = self._item(
+            "test-case",
+            "Sensing Sensitivity Verification",
+            "Verify sensing thresholds across full programmable range using "
+            "calibrated test signals injected via the lead connector.",
+            **{"test-steps": "1. Connect signal generator to lead port\n"
+                             "2. Inject calibrated sine wave at cardiac frequency\n"
+                             "3. Sweep amplitude from 0.1 mV to 20 mV\n"
+                             "4. Verify sense marker at each sensitivity setting",
+               "expected-result": "Sense marker triggered at programmed threshold ±10%"},
+        )
+        tc_battery_longevity = self._item(
+            "test-case",
+            "Battery Longevity Analysis",
+            "Analytical verification of battery longevity using measured "
+            "current drain data and battery discharge model.",
+            **{"test-steps": "1. Measure current drain at nominal settings\n"
+                             "2. Measure current drain at max settings\n"
+                             "3. Apply battery discharge model with derating\n"
+                             "4. Calculate projected longevity",
+               "expected-result": "Projected longevity ≥ 10 years at nominal settings"},
+        )
+        tc_eri_eos = self._item(
+            "test-case",
+            "ERI / EOS Threshold Verification",
+            "Verify ERI and EOS triggers at correct battery voltage thresholds "
+            "and that VVI backup pacing activates at EOS.",
+            **{"test-steps": "1. Simulate battery voltage ramp-down\n"
+                             "2. Monitor for ERI indication\n"
+                             "3. Continue ramp to EOS threshold\n"
+                             "4. Verify VVI backup mode activation",
+               "expected-result": "ERI at specified voltage, VVI backup at EOS within 2s"},
+        )
+        tc_emc = self._item(
+            "test-case",
+            "EMC Immunity Testing",
+            "Verify device maintains safe operation during exposure to "
+            "electromagnetic fields per IEC 60601-1-2.",
+            **{"test-steps": "1. Configure device in DDD mode at nominal settings\n"
+                             "2. Apply conducted immunity (IEC 61000-4-6)\n"
+                             "3. Apply radiated immunity (IEC 61000-4-3)\n"
+                             "4. Apply ESD (IEC 61000-4-2)\n"
+                             "5. Monitor pacing output throughout",
+               "expected-result": "No pacing inhibition, no inappropriate output, no reset"},
+        )
+        tc_mri = self._item(
+            "test-case",
+            "MRI Conditional Mode Verification",
+            "Verify device operates safely in MRI-conditional mode during "
+            "simulated MRI exposure.",
+            **{"test-steps": "1. Programme MRI-conditional mode\n"
+                             "2. Expose to 1.5 T and 3.0 T static fields\n"
+                             "3. Apply gradient and RF fields per labelling conditions\n"
+                             "4. Measure temperature rise, force, torque\n"
+                             "5. Verify asynchronous pacing maintained",
+               "expected-result": "Temperature rise < 2°C, stable pacing, no reset"},
+        )
+        tc_defib = self._item(
+            "test-case",
+            "Defibrillation Withstand Test",
+            "Verify device survives external defibrillation and resumes "
+            "normal operation.",
+            **{"test-steps": "1. Connect device to defibrillation test fixture\n"
+                             "2. Apply 360 J monophasic shock\n"
+                             "3. Apply 200 J biphasic shock\n"
+                             "4. Interrogate device after each shock\n"
+                             "5. Verify programmed settings preserved",
+               "expected-result": "Device resumes programmed operation within 5 seconds"},
+        )
+        tc_hermeticity = self._item(
+            "test-case",
+            "Hermetic Seal Leak Test",
+            "Verify helium leak rate of the titanium enclosure.",
+            **{"test-steps": "1. Place device in helium bombing chamber (5 atm, 2 hrs)\n"
+                             "2. Transfer to helium leak detector within 1 minute\n"
+                             "3. Measure fine leak rate\n"
+                             "4. Repeat after thermal cycling (−40°C to +70°C, 100 cycles)",
+               "expected-result": "Leak rate ≤ 1 × 10⁻⁹ atm·cc/sec before and after cycling"},
+        )
+        tc_biocompat = self._item(
+            "test-case",
+            "Biocompatibility Test Suite",
+            "ISO 10993 biological evaluation for all patient-contacting materials.",
+            **{"test-steps": "1. Cytotoxicity (ISO 10993-5) — L929 cell line\n"
+                             "2. Sensitisation (ISO 10993-10) — Guinea pig maximisation\n"
+                             "3. Irritation (ISO 10993-23) — In vitro reconstructed tissue\n"
+                             "4. Systemic toxicity (ISO 10993-11)\n"
+                             "5. Implantation (ISO 10993-6) — 26-week rabbit study",
+               "expected-result": "All endpoints within acceptance criteria per ISO 10993"},
+        )
+
+        # Software verification tests
+        tc_sw_sensing = self._item(
+            "test-case",
+            "Sensing Algorithm Validation — Annotated ECG Database",
+            "Verify sensing algorithm performance against annotated ECG "
+            "database with known event classifications.",
+            **{"test-steps": "1. Load MIT-BIH annotated ECG database\n"
+                             "2. Process each record through sensing algorithm\n"
+                             "3. Compare detected events with annotations\n"
+                             "4. Calculate sensitivity and specificity",
+               "expected-result": "Sensitivity ≥ 99.5%, specificity ≥ 99.0%"},
+        )
+        tc_sw_timing = self._item(
+            "test-case",
+            "Pacing Timing Precision — All Modes",
+            "Verify timing intervals (AV delay, PVARP, blanking) across all "
+            "programmable values in all supported modes.",
+            **{"test-steps": "1. Programme each mode (DDD, DDDR, VVI, AAI)\n"
+                             "2. Set each timing parameter to min, nominal, max\n"
+                             "3. Measure actual intervals on oscilloscope\n"
+                             "4. Compare to programmed values",
+               "expected-result": "All intervals within ±1 ms of programmed value"},
+        )
+        tc_sw_mode_switch = self._item(
+            "test-case",
+            "Mode Switch Response Time",
+            "Verify mode switch activates within specification during "
+            "simulated atrial tachyarrhythmia.",
+            **{"test-steps": "1. Pace device in DDD mode at 70 bpm\n"
+                             "2. Inject simulated atrial flutter at 300 bpm\n"
+                             "3. Measure time from onset to mode switch\n"
+                             "4. Verify ventricular rate drops to sensor rate",
+               "expected-result": "Mode switch within ≤ 2 seconds of detection criteria met"},
+        )
+        tc_sw_watchdog = self._item(
+            "test-case",
+            "Watchdog Backup Pacing Activation",
+            "Verify hardware watchdog triggers VVI backup pacing when main "
+            "firmware task is halted.",
+            **{"test-steps": "1. Run device in normal DDD mode\n"
+                             "2. Inject debug command to halt therapy task\n"
+                             "3. Measure time to VVI backup activation\n"
+                             "4. Verify backup pacing parameters (70 bpm, 5.0 V)",
+               "expected-result": "VVI backup within ≤ 2 seconds, correct parameters"},
+        )
+        tc_sw_mcdc = self._item(
+            "test-case",
+            "MC/DC Structural Coverage — Class C Modules",
+            "Verify 100% Modified Condition/Decision Coverage for all "
+            "IEC 62304 Class C software modules.",
+            **{"test-steps": "1. Execute full unit test suite with coverage instrumentation\n"
+                             "2. Generate MC/DC coverage report\n"
+                             "3. Analyse gaps and add targeted tests\n"
+                             "4. Re-run until 100% MC/DC achieved",
+               "expected-result": "100% MC/DC coverage for all Class C modules"},
+        )
+
+        # Security tests
+        tc_sec_auth = self._item(
+            "test-case",
+            "Telemetry Authentication Verification",
+            "Verify that unauthenticated programming commands are rejected.",
+            **{"test-steps": "1. Attempt programming without authentication\n"
+                             "2. Attempt programming with invalid credentials\n"
+                             "3. Attempt replay of captured authentication\n"
+                             "4. Verify all rejected and logged",
+               "expected-result": "All unauthorised attempts rejected, events logged"},
+        )
+        tc_sec_fw_sign = self._item(
+            "test-case",
+            "Firmware Signature Verification",
+            "Verify that unsigned or tampered firmware is rejected.",
+            **{"test-steps": "1. Attempt update with unsigned firmware image\n"
+                             "2. Attempt update with modified signed image\n"
+                             "3. Attempt update with valid signed image\n"
+                             "4. Verify only valid image accepted",
+               "expected-result": "Only correctly signed firmware accepted; others rejected"},
+        )
+        tc_sec_encrypt = self._item(
+            "test-case",
+            "Telemetry Encryption Verification",
+            "Verify telemetry data is encrypted and cannot be read by "
+            "passive eavesdropper.",
+            **{"test-steps": "1. Capture telemetry RF traffic with SDR\n"
+                             "2. Attempt to decode patient data from capture\n"
+                             "3. Verify encryption negotiation occurs\n"
+                             "4. Confirm captured data is indistinguishable from random",
+               "expected-result": "No patient data recoverable from captured traffic"},
+        )
+
+        # Validation tests
+        tc_val_bench = self._item(
+            "test-case",
+            "Pre-Clinical Bench Validation — Simulated Use",
+            "Validate device performance in anatomical heart simulator under "
+            "simulated clinical scenarios.",
+            **{"test-steps": "1. Install device in heart simulator with physiological loads\n"
+                             "2. Simulate normal sinus rhythm → verify inhibition\n"
+                             "3. Simulate complete heart block → verify DDD pacing\n"
+                             "4. Simulate atrial fibrillation → verify mode switch\n"
+                             "5. Simulate lead dislodgement → verify autocapture response",
+               "expected-result": "Correct device response in all simulated scenarios"},
+        )
+        tc_val_animal = self._item(
+            "test-case",
+            "Pre-Clinical Animal Study — Ovine Model",
+            "Validate chronic device performance and biocompatibility in "
+            "an ovine model over 26 weeks.",
+            **{"test-steps": "1. Implant device in 6 sheep (dual-chamber)\n"
+                             "2. Weekly threshold and impedance measurements\n"
+                             "3. Histopathological examination at explant\n"
+                             "4. Assess capsule formation and tissue response",
+               "expected-result": "Stable thresholds, no adverse tissue reaction, minimal fibrosis"},
+        )
+
+        # Compose test cases into reports
+        self._compose(ver_report, tc_pacing_range, tc_sensing_threshold,
+                       tc_battery_longevity, tc_eri_eos, tc_emc, tc_mri,
+                       tc_defib, tc_hermeticity, tc_biocompat)
+        self._compose(sw_test_report, tc_sw_sensing, tc_sw_timing,
+                       tc_sw_mode_switch, tc_sw_watchdog, tc_sw_mcdc,
+                       tc_sec_auth, tc_sec_fw_sign, tc_sec_encrypt)
+        self._compose(val_report, tc_val_bench, tc_val_animal)
+
+        # Verification links
+        self._verifies(tc_pacing_range, req_pacing_output)
+        self._verifies(tc_sensing_threshold, req_sensing)
+        self._verifies(tc_battery_longevity, req_battery_life)
+        self._verifies(tc_eri_eos, req_eri)
+        self._verifies(tc_emc, req_emc)
+        self._verifies(tc_mri, req_mri_conditional)
+        self._verifies(tc_defib, req_defibrillation)
+        self._verifies(tc_hermeticity, req_hermeticity)
+        self._verifies(tc_biocompat, req_biocompat)
+        self._verifies(tc_sw_sensing, req_sw_sensing_algo)
+        self._verifies(tc_sw_timing, req_sw_pacing_engine)
+        self._verifies(tc_sw_mode_switch, req_sw_arrhythmia)
+        self._verifies(tc_sw_watchdog, req_sw_watchdog)
+        self._verifies(tc_sw_mcdc, req_sw_sensing_algo, req_sw_pacing_engine, req_sw_arrhythmia)
+        self._verifies(tc_sec_auth, req_sec_auth)
+        self._verifies(tc_sec_fw_sign, req_sec_integrity, req_sec_update)
+        self._verifies(tc_sec_encrypt, req_sec_encrypt)
+
+        # ==============================================================
+        # TRACEABILITY MATRICES
+        # ==============================================================
+
+        # 1. System Requirements Traceability Matrix
+        self._matrix(
+            name="System RTM",
+            description=(
+                "Traces system-level requirements to their verifying "
+                "test cases — the core design verification matrix."
+            ),
+            columns=[
+                {
+                    "label": "System Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sys_req_spec,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 2. Software Requirements Traceability
+        self._matrix(
+            name="Software Requirements Traceability",
+            description=(
+                "Traces software requirements to system requirements "
+                "(derives_from) and verifying test cases."
+            ),
+            columns=[
+                {
+                    "label": "Software Requirement",
+                    "seed_item_type_slug": "requirement",
+                    "seed_container": sw_req_spec,
+                },
+                {
+                    "label": "Derived From",
+                    "relation_name": "derives_from",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Verifying Test Cases",
+                    "relation_name": "verifies",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 3. Hardware FMEA Matrix
+        self._matrix(
+            name="Hardware FMEA Matrix",
+            description=(
+                "Traces hardware failure modes to their root causes "
+                "and challenged requirements."
+            ),
+            columns=[
+                {
+                    "label": "Failure Mode",
+                    "seed_item_type_slug": "failure-mode",
+                    "seed_container": hw_fmea,
+                },
+                {
+                    "label": "Caused By",
+                    "relation_name": "causes",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+                {
+                    "label": "Challenges Requirement",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 4. Software FMEA Matrix
+        self._matrix(
+            name="Software FMEA Matrix",
+            description=(
+                "Traces software failure modes to their root causes "
+                "and challenged requirements."
+            ),
+            columns=[
+                {
+                    "label": "Failure Mode",
+                    "seed_item_type_slug": "failure-mode",
+                    "seed_container": sw_fmea,
+                },
+                {
+                    "label": "Caused By",
+                    "relation_name": "causes",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 5. Risk Assessment Matrix
+        self._matrix(
+            name="Risk Assessment Matrix",
+            description=(
+                "Traces identified risks to the requirements they challenge."
+            ),
+            columns=[
+                {
+                    "label": "Risk",
+                    "seed_item_type_slug": "risk",
+                    "seed_container": risk_mgmt_file,
+                },
+                {
+                    "label": "Challenges Requirement",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 6. Cybersecurity Threat Assessment Matrix
+        self._matrix(
+            name="Cybersecurity Threat Matrix",
+            description=(
+                "Traces threats to exploited vulnerabilities and "
+                "their mitigations."
+            ),
+            columns=[
+                {
+                    "label": "Threat",
+                    "seed_item_type_slug": "threat",
+                    "seed_container": threat_assessment,
+                },
+                {
+                    "label": "Exploits Vulnerability",
+                    "relation_name": "exploits",
+                    "direction": MatrixColumn.Direction.OUTGOING,
+                },
+                {
+                    "label": "Mitigations",
+                    "relation_name": "mitigates",
+                    "direction": MatrixColumn.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 7. Requirement Decomposition Matrix
+        self._matrix(
+            name="Requirement Decomposition Matrix",
+            description=(
+                "Shows how system requirements are decomposed into "
+                "lower-level software requirements."
             ),
             columns=[
                 {

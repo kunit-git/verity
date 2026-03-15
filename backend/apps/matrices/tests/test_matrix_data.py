@@ -7,16 +7,34 @@ from apps.relations.models import RelationType, ItemRelation
 URL = "/api/v1/tables/"
 
 
+def _seed_source(item_type_id, name="seed", container_id=None):
+    src = {"name": name, "kind": "seed", "seed_item_type": str(item_type_id)}
+    if container_id:
+        src["seed_container"] = str(container_id)
+    return src
+
+
+def _traversal_source(relation_type_id, direction="outgoing", name="linked"):
+    return {
+        "name": name,
+        "kind": "traversal",
+        "relation_type": str(relation_type_id),
+        "direction": direction,
+    }
+
+
+def _display_col(heading, source):
+    return {"heading": heading, "source": source}
+
+
 class TestMatrixData:
     def test_seed_column_returns_items(self, editor_client, item_type, editor_user, vault):
         ItemFactory(item_type=item_type, created_by=editor_user, title="A")
         ItemFactory(item_type=item_type, created_by=editor_user, title="B")
         r = editor_client.post(URL, {
             "name": "Seed Only",
-            "columns": [{
-                "position": 0, "label": "Items", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         matrix_id = r.data["id"]
         r = editor_client.get(f"{URL}{matrix_id}/data/")
@@ -32,11 +50,8 @@ class TestMatrixData:
         ItemRelation(relation_type=comp, source=parent, target=child, created_by=editor_user).save()
         r = editor_client.post(URL, {
             "name": "Filtered",
-            "columns": [{
-                "position": 0, "label": "Children", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-                "seed_container": str(parent.id),
-            }],
+            "sources": [_seed_source(item_type.id, container_id=parent.id)],
+            "columns": [_display_col("Children", "seed")],
         }, format="json")
         matrix_id = r.data["id"]
         r = editor_client.get(f"{URL}{matrix_id}/data/")
@@ -52,10 +67,13 @@ class TestMatrixData:
         ItemRelation(relation_type=trace, source=item_a, target=item_b, created_by=editor_user).save()
         r = editor_client.post(URL, {
             "name": "Traverse",
+            "sources": [
+                _seed_source(type_a.id),
+                _traversal_source(trace.id),
+            ],
             "columns": [
-                {"position": 0, "label": "Source", "column_kind": "seed", "seed_item_type": str(type_a.id)},
-                {"position": 1, "label": "Target", "column_kind": "traversal",
-                 "relation_type": str(trace.id), "direction": "outgoing"},
+                _display_col("Source", "seed"),
+                _display_col("Target", "linked"),
             ],
         }, format="json")
         matrix_id = r.data["id"]
@@ -69,10 +87,13 @@ class TestMatrixData:
         ItemFactory(item_type=type_a, created_by=editor_user)
         r = editor_client.post(URL, {
             "name": "NoMatch",
+            "sources": [
+                _seed_source(type_a.id),
+                _traversal_source(trace.id),
+            ],
             "columns": [
-                {"position": 0, "label": "Source", "column_kind": "seed", "seed_item_type": str(type_a.id)},
-                {"position": 1, "label": "Target", "column_kind": "traversal",
-                 "relation_type": str(trace.id), "direction": "outgoing"},
+                _display_col("Source", "seed"),
+                _display_col("Target", "linked"),
             ],
         }, format="json")
         matrix_id = r.data["id"]
@@ -88,9 +109,13 @@ class TestMatrixData:
         CustomFieldValue.objects.create(item=item, field_definition=field, value=5.0)
         r = editor_client.post(URL, {
             "name": "Formula",
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "$seed.weight * 2"},
+            ],
             "columns": [
-                {"position": 0, "label": "Items", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Double", "column_kind": "formula", "formula": "$1.weight * 2"},
+                _display_col("Items", "seed"),
+                _display_col("Double", "calc"),
             ],
         }, format="json")
         matrix_id = r.data["id"]
@@ -102,9 +127,13 @@ class TestMatrixData:
         ItemFactory(item_type=item_type, created_by=editor_user)
         r = editor_client.post(URL, {
             "name": "NullFormula",
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "$seed.nonexistent + 1"},
+            ],
             "columns": [
-                {"position": 0, "label": "Items", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Missing", "column_kind": "formula", "formula": "$1.nonexistent + 1"},
+                _display_col("Items", "seed"),
+                _display_col("Missing", "calc"),
             ],
         }, format="json")
         matrix_id = r.data["id"]
@@ -120,9 +149,13 @@ class TestMatrixData:
         CustomFieldValue.objects.create(item=item, field_definition=field, value=0.0)
         r = editor_client.post(URL, {
             "name": "DivZero",
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "10 / $seed.val"},
+            ],
             "columns": [
-                {"position": 0, "label": "Items", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Div", "column_kind": "formula", "formula": "10 / $1.val"},
+                _display_col("Items", "seed"),
+                _display_col("Div", "calc"),
             ],
         }, format="json")
         matrix_id = r.data["id"]
@@ -133,10 +166,8 @@ class TestMatrixData:
         item_type = ItemTypeFactory(vault=vault, slug="empty-data")
         r = editor_client.post(URL, {
             "name": "Empty",
-            "columns": [{
-                "position": 0, "label": "Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Seed", "seed")],
         }, format="json")
         matrix_id = r.data["id"]
         r = editor_client.get(f"{URL}{matrix_id}/data/")

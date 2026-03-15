@@ -65,6 +65,8 @@ class CustomFieldDefinition(SoftDeleteModel):
         BOOLEAN = "boolean"
         DATE = "date"
         CHOICE = "choice"
+        MERMAID = "mermaid"
+        TABLE = "table"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     item_type = models.ForeignKey(
@@ -92,9 +94,13 @@ class CustomFieldDefinition(SoftDeleteModel):
         return f"{self.item_type.name}.{self.name}"
 
     def _soft_cascade(self):
+        now = timezone.now()
         CustomFieldValue.all_objects.filter(
             field_definition=self, is_deleted=False
-        ).update(is_deleted=True, deleted_at=timezone.now())
+        ).update(is_deleted=True, deleted_at=now)
+        ItemTableAnnotation.all_objects.filter(
+            field_definition=self, is_deleted=False
+        ).update(is_deleted=True, deleted_at=now)
 
 
 class Item(SoftDeleteModel):
@@ -138,6 +144,9 @@ class Item(SoftDeleteModel):
             is_deleted=True, deleted_at=now
         )
         CustomFieldValue.all_objects.filter(item=self, is_deleted=False).update(
+            is_deleted=True, deleted_at=now
+        )
+        ItemTableAnnotation.all_objects.filter(item=self, is_deleted=False).update(
             is_deleted=True, deleted_at=now
         )
         ItemRelation.all_objects.filter(
@@ -222,3 +231,40 @@ class CustomFieldValue(SoftDeleteModel):
                 name="unique_alive_custom_field_value_item_def",
             ),
         ]
+
+
+class ItemTableAnnotation(SoftDeleteModel):
+    """Stores user-entered annotation values for table field columns on an item."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # The item that owns the table field (not the item in the cell)
+    item = models.ForeignKey(
+        Item, on_delete=models.PROTECT, related_name="table_annotations"
+    )
+    field_definition = models.ForeignKey(
+        CustomFieldDefinition, on_delete=models.PROTECT, related_name="table_annotations"
+    )
+    # Slug of the annotation column in the table field schema
+    column_slug = models.SlugField(max_length=100)
+    # SHA-256 hash of the ordered traversal item IDs for the row
+    row_hash = models.CharField(max_length=64, db_index=True)
+    value = models.TextField(blank=True, default="")
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="updated_item_table_annotations",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "items_item_table_annotation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "field_definition", "column_slug", "row_hash"],
+                condition=models.Q(is_deleted=False),
+                name="unique_alive_item_table_annotation",
+            ),
+        ]
+
+    def __str__(self):
+        return f"ItemTableAnnotation({self.item_id}, {self.field_definition.slug}, {self.column_slug})"

@@ -35,6 +35,103 @@ class CustomFieldDefinitionSerializer(serializers.ModelSerializer):
                 )
         return value
 
+    def validate(self, data):
+        field_kind = data.get("field_kind", getattr(self.instance, "field_kind", None))
+        options = data.get("options", getattr(self.instance, "options", {}))
+        if field_kind == CustomFieldDefinition.FieldKind.TABLE:
+            self._validate_table_schema(options)
+        return data
+
+    def _validate_table_schema(self, options):
+        from apps.matrices.formula import validate_formula, parse_formula, extract_references, ParseError
+
+        columns = options.get("columns") if options else None
+        if not isinstance(columns, list) or len(columns) == 0:
+            raise serializers.ValidationError(
+                {"options": "Table fields must have at least one column in options.columns."}
+            )
+
+        names = set()
+        annotation_slugs = set()
+        for i, col in enumerate(columns):
+            # Validate name
+            name = col.get("name", "")
+            if not name:
+                raise serializers.ValidationError(
+                    {"options": f"Column {i}: name is required."}
+                )
+            if name in names:
+                raise serializers.ValidationError(
+                    {"options": f"Column {i}: name '{name}' is not unique within this table."}
+                )
+            names.add(name)
+
+            kind = col.get("kind")
+            if kind not in ("traversal", "item_field", "annotation", "formula"):
+                raise serializers.ValidationError(
+                    {"options": f"Column {i}: invalid kind '{kind}'. Must be traversal, item_field, annotation, or formula."}
+                )
+            if i == 0 and kind != "traversal":
+                raise serializers.ValidationError(
+                    {"options": "The first column of a table field must be a traversal column."}
+                )
+            if kind == "traversal":
+                if not col.get("relation_type_id"):
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: traversal columns require relation_type_id."}
+                    )
+                if col.get("direction") not in ("outgoing", "incoming"):
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: traversal columns require direction ('outgoing' or 'incoming')."}
+                    )
+            elif kind == "annotation":
+                slug = col.get("slug", "")
+                if not slug:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: annotation columns require a slug."}
+                    )
+                if slug in annotation_slugs:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: annotation slug '{slug}' is not unique within this table."}
+                    )
+                annotation_slugs.add(slug)
+            elif kind == "item_field":
+                if not col.get("field_slug"):
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: item_field columns require field_slug."}
+                    )
+                source_ref = col.get("source_ref", "")
+                if not source_ref:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: item_field columns require source_ref."}
+                    )
+                if source_ref not in names:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: source_ref '{source_ref}' references unknown column."}
+                    )
+            elif kind == "formula":
+                formula = col.get("formula", "")
+                if not formula:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: formula columns require a formula."}
+                    )
+                errors = validate_formula(formula)
+                if errors:
+                    raise serializers.ValidationError(
+                        {"options": f"Column {i}: invalid formula: {errors[0]}"}
+                    )
+                # Validate formula references exist
+                try:
+                    ast = parse_formula(formula)
+                    refs = extract_references(ast)
+                    for ref_name, _ in refs:
+                        if ref_name not in names:
+                            raise serializers.ValidationError(
+                                {"options": f"Column {i}: formula references unknown source '{ref_name}'."}
+                            )
+                except ParseError:
+                    pass  # Already caught above
+
 
 class ItemTypeSerializer(serializers.ModelSerializer):
     custom_fields = CustomFieldDefinitionSerializer(many=True, read_only=True)
@@ -171,9 +268,11 @@ class ItemSerializer(serializers.ModelSerializer):
         field_defs = {
             fd.slug: fd
             for fd in CustomFieldDefinition.objects.filter(item_type=item_type)
+            # Table fields have no CustomFieldValue rows — exclude from validation
+            if fd.field_kind != CustomFieldDefinition.FieldKind.TABLE
         }
 
-        # Check required fields
+        # Check required fields (table fields are never required via custom_fields)
         for slug, fd in field_defs.items():
             if fd.is_required and slug not in custom_fields_data:
                 raise serializers.ValidationError(
@@ -258,7 +357,12 @@ class ItemSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Replace custom_fields dict with actual values from DB
-        cfv_qs = CustomFieldValue.objects.filter(item=instance).select_related("field_definition")
+        # Table fields are excluded — their data is served via the table-field data endpoint
+        cfv_qs = (
+            CustomFieldValue.objects.filter(item=instance)
+            .select_related("field_definition")
+            .exclude(field_definition__field_kind=CustomFieldDefinition.FieldKind.TABLE)
+        )
         data["custom_fields"] = {
             cfv.field_definition.slug: cfv.value for cfv in cfv_qs
         }

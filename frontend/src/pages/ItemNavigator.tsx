@@ -17,11 +17,14 @@ import {
   AlertTriangle,
   GitCompareArrows,
   Pin,
+  NotebookPen,
 } from "lucide-react";
 import { getItem, getItems, deleteItem, getItemTypes, getItemVersions } from "../api/items";
 import { getNavigation, getRelationTypes, createRelation } from "../api/relations";
 import { generateDocument } from "../api/mailbox";
 import CompareDialog from "../components/CompareDialog";
+import MermaidDiagram from "../components/MermaidDiagram";
+import TableFieldWidget from "../components/TableFieldWidget";
 import { useConfirm } from "../components/ConfirmDialog";
 import type { NavigationRef, RelationType, ItemVersion } from "../types";
 import { useState } from "react";
@@ -182,6 +185,13 @@ export default function ItemNavigator() {
             )}
           </button>
           <button
+            onClick={() => navigate(`/items/${id}/doc-edit`)}
+            className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
+            title="Document Editor"
+          >
+            <NotebookPen className="h-4 w-4" />
+          </button>
+          <button
             onClick={() => generateMutation.mutate()}
             disabled={generateMutation.isPending}
             className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
@@ -317,16 +327,21 @@ export default function ItemNavigator() {
                         const fieldDef = itemType?.custom_fields.find(
                           (f) => f.slug === key
                         );
+                        const isMermaid = fieldDef?.field_kind === "mermaid";
                         return (
                           <div
                             key={key}
-                            className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2"
+                            className={`rounded-md border border-gray-100 bg-gray-50 px-3 py-2${isMermaid ? " col-span-2" : ""}`}
                           >
                             <dt className="text-xs font-medium text-gray-500">
                               {fieldDef?.name || key}
                             </dt>
-                            <dd className="mt-0.5 text-sm text-gray-800">
-                              {String(val ?? "—")}
+                            <dd className="mt-1 text-sm text-gray-800">
+                              {isMermaid ? (
+                                <MermaidDiagram source={String(val ?? "")} />
+                              ) : (
+                                String(val ?? "—")
+                              )}
                             </dd>
                           </div>
                         );
@@ -334,6 +349,18 @@ export default function ItemNavigator() {
                     </dl>
                   </div>
                 )}
+
+              {/* Table fields */}
+              {itemType?.custom_fields
+                .filter((f) => f.field_kind === "table")
+                .map((f) => (
+                  <TableFieldWidget
+                    key={f.slug}
+                    itemId={item.id}
+                    fieldSlug={f.slug}
+                    label={f.name}
+                  />
+                ))}
 
               {/* Metadata */}
               <div className="border-t border-gray-100 pt-4 text-xs text-gray-400">

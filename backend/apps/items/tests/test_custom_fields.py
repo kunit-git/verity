@@ -55,6 +55,48 @@ class TestCustomFieldCreate:
         assert r.status_code == 403
 
 
+    def test_create_mermaid_field(self, editor_client, item_type):
+        r = editor_client.post(f"/api/v1/item-types/{item_type.id}/custom-fields/", {
+            "name": "Architecture", "slug": "architecture", "field_kind": "mermaid", "display_order": 6,
+        }, format="json")
+        assert r.status_code == 201
+        assert r.data["field_kind"] == "mermaid"
+
+    def test_mermaid_field_value_roundtrip(self, editor_client, item_type, editor_user):
+        from conftest import CustomFieldDefinitionFactory, ItemFactory
+        field = CustomFieldDefinitionFactory(item_type=item_type, slug="diagram", field_kind="mermaid")
+        item = ItemFactory(item_type=item_type, created_by=editor_user)
+        source = "graph TD\n    A --> B"
+        r = editor_client.patch(f"/api/v1/items/{item.id}/", {
+            "custom_fields": {"diagram": source}
+        }, format="json")
+        assert r.status_code == 200
+        assert r.data["custom_fields"]["diagram"] == source
+
+    def test_mermaid_field_in_editor_data(self, editor_client, item_type, editor_user):
+        from conftest import CustomFieldDefinitionFactory, ItemFactory
+        field = CustomFieldDefinitionFactory(item_type=item_type, slug="diagram", field_kind="mermaid")
+        item = ItemFactory(item_type=item_type, created_by=editor_user)
+        r = editor_client.get(f"/api/v1/items/{item.id}/editor-data/")
+        assert r.status_code == 200
+        defs = r.data["items"][0]["custom_field_definitions"]
+        assert any(d["slug"] == "diagram" and d["field_kind"] == "mermaid" for d in defs)
+
+    def test_mermaid_field_versioned(self, editor_client, item_type, editor_user):
+        from conftest import CustomFieldDefinitionFactory, ItemFactory
+        from apps.items.models import ItemVersion
+        CustomFieldDefinitionFactory(item_type=item_type, slug="diagram", field_kind="mermaid")
+        item = ItemFactory(item_type=item_type, created_by=editor_user)
+        source_v1 = "graph TD\n    A --> B"
+        editor_client.patch(f"/api/v1/items/{item.id}/", {
+            "custom_fields": {"diagram": source_v1}
+        }, format="json")
+        item.refresh_from_db()
+        assert item.current_version == 2
+        snapshot = ItemVersion.objects.filter(item=item, version_number=1).first()
+        assert snapshot is not None
+
+
 class TestCustomFieldManage:
     def test_patch_field(self, editor_client, item_type):
         field = CustomFieldDefinitionFactory(item_type=item_type, slug="editable")

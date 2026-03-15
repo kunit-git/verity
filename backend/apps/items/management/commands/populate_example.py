@@ -39,7 +39,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.items.models import CustomFieldDefinition, CustomFieldValue, DocumentTemplate, Item, ItemType
-from apps.matrices.models import Matrix, MatrixColumn
+from apps.matrices.models import Matrix, MatrixDisplayColumn, MatrixSource
 from apps.relations.models import ItemRelation, RelationType
 from apps.vaults.models import Vault, VaultAuditLog, VaultMembership
 
@@ -133,24 +133,34 @@ class Command(BaseCommand):
             vault=self._vault,
         )
         for position, col in enumerate(columns):
+            label = col["label"]
+            # Generate a slug name from the label
+            name = label.lower().replace(" ", "-").replace("_", "-")
+            # Ensure uniqueness by appending position if needed
             if position == 0:
-                MatrixColumn.objects.create(
+                MatrixSource.objects.create(
                     matrix=matrix,
+                    name=name,
                     position=0,
-                    label=col["label"],
-                    column_kind=MatrixColumn.Kind.SEED,
+                    kind=MatrixSource.Kind.SEED,
                     seed_item_type=self._types[col["seed_item_type_slug"]],
                     seed_container=col.get("seed_container"),
                 )
             else:
-                MatrixColumn.objects.create(
+                MatrixSource.objects.create(
                     matrix=matrix,
+                    name=name,
                     position=position,
-                    label=col["label"],
-                    column_kind=MatrixColumn.Kind.TRAVERSAL,
+                    kind=MatrixSource.Kind.TRAVERSAL,
                     relation_type=self._relations[col["relation_name"]],
                     direction=col["direction"],
                 )
+            MatrixDisplayColumn.objects.create(
+                matrix=matrix,
+                position=position,
+                heading=label,
+                source_name=name,
+            )
         return matrix
 
     # ------------------------------------------------------------------
@@ -159,8 +169,10 @@ class Command(BaseCommand):
 
     def _wipe_vault(self, slug):
         """Wipe a single vault and all its data (if it exists)."""
-        from apps.items.models import ItemVersion
+        from apps.items.models import ItemTableAnnotation, ItemVersion
+        from apps.agent.models import Conversation, Message, PendingAction
         from apps.mailbox.models import MailboxArtifact
+        from apps.matrices.models import MatrixAnnotation
 
         old_vault = Vault.all_objects.filter(slug=slug).first()
         if old_vault:
@@ -168,10 +180,17 @@ class Command(BaseCommand):
             vault_types = ItemType.all_objects.filter(vault=old_vault)
             vault_items = Item.all_objects.filter(item_type__vault=old_vault)
             vault_field_defs = CustomFieldDefinition.all_objects.filter(item_type__vault=old_vault)
+            vault_conversations = Conversation.all_objects.filter(vault=old_vault)
 
-            MatrixColumn.all_objects.filter(matrix__vault=old_vault).hard_delete()
+            PendingAction.all_objects.filter(conversation__in=vault_conversations).hard_delete()
+            Message.all_objects.filter(conversation__in=vault_conversations).hard_delete()
+            vault_conversations.hard_delete()
+            MatrixAnnotation.all_objects.filter(matrix__vault=old_vault).hard_delete()
+            MatrixDisplayColumn.all_objects.filter(matrix__vault=old_vault).hard_delete()
+            MatrixSource.all_objects.filter(matrix__vault=old_vault).hard_delete()
             Matrix.all_objects.filter(vault=old_vault).hard_delete()
             ItemRelation.all_objects.filter(relation_type__vault=old_vault).hard_delete()
+            ItemTableAnnotation.all_objects.filter(item__in=vault_items).hard_delete()
             CustomFieldValue.all_objects.filter(field_definition__in=vault_field_defs).hard_delete()
             ItemVersion.all_objects.filter(item__in=vault_items).hard_delete()
             vault_items.hard_delete()
@@ -421,12 +440,12 @@ class Command(BaseCommand):
         self._wipe_vault(self.MEDICAL_VAULT_SLUG)
         self._wipe_vault(self.FINANCE_VAULT_SLUG)
 
-        # Ensure admin user exists
-        admin = User.objects.filter(username="admin").first()
+        # Require an existing site admin — never create one here.
+        admin = User.objects.filter(is_site_admin=True).first()
         if not admin:
-            admin = User.objects.create_superuser(
-                username="admin", email="admin@example.com", password="admin282!",
-                is_site_admin=True,
+            raise SystemExit(
+                "No site-admin account found. Complete the initial setup at /setup "
+                "before running populate_example."
             )
 
         # Create demo author (shared across vaults)
@@ -436,7 +455,7 @@ class Command(BaseCommand):
             email="demo@example.com",
             password="DEMOdemo123!",
         )
-        self.stdout.write("  Created user: admin / admin (site admin)")
+        self.stdout.write(f"  Using site admin: {admin.username}")
         self.stdout.write("  Created user: demo / DEMOdemo123! (vault role: editor)\n")
 
         # ==============================================================
@@ -1993,7 +2012,7 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -2014,12 +2033,12 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Derives From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -2040,12 +2059,12 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Challenged Requirements",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -2066,12 +2085,12 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Threatened Requirements",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -2092,7 +2111,7 @@ class Command(BaseCommand):
                 {
                     "label": "Challenged Requirements",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -2113,12 +2132,12 @@ class Command(BaseCommand):
                 {
                     "label": "Exploited Vulnerabilities",
                     "relation_name": "exploits",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Mitigations",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -2139,12 +2158,12 @@ class Command(BaseCommand):
                 {
                     "label": "Refined By",
                     "relation_name": "refines",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -3332,7 +3351,7 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -3354,12 +3373,12 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Derives From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -3380,12 +3399,12 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Derives From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -3406,12 +3425,12 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Challenged Requirements",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -3432,7 +3451,7 @@ class Command(BaseCommand):
                 {
                     "label": "Challenged Requirements",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -3453,12 +3472,12 @@ class Command(BaseCommand):
                 {
                     "label": "Exploited Vulnerabilities",
                     "relation_name": "exploits",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Mitigations",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -3479,12 +3498,12 @@ class Command(BaseCommand):
                 {
                     "label": "Refined By",
                     "relation_name": "refines",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -4871,7 +4890,7 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -4892,12 +4911,12 @@ class Command(BaseCommand):
                 {
                     "label": "Derived From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -4918,12 +4937,12 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
                 {
                     "label": "Challenges Requirement",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -4944,7 +4963,7 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -4964,7 +4983,7 @@ class Command(BaseCommand):
                 {
                     "label": "Challenges Requirement",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -4985,12 +5004,12 @@ class Command(BaseCommand):
                 {
                     "label": "Exploits Vulnerability",
                     "relation_name": "exploits",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Mitigations",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -5011,12 +5030,12 @@ class Command(BaseCommand):
                 {
                     "label": "Refined By",
                     "relation_name": "refines",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6197,7 +6216,7 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6218,12 +6237,12 @@ class Command(BaseCommand):
                 {
                     "label": "Derived From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6243,7 +6262,7 @@ class Command(BaseCommand):
                 {
                     "label": "Challenges Requirement",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
             ],
         )
@@ -6263,7 +6282,7 @@ class Command(BaseCommand):
                 {
                     "label": "Caused By",
                     "relation_name": "causes",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6284,12 +6303,12 @@ class Command(BaseCommand):
                 {
                     "label": "Exploits Vulnerability",
                     "relation_name": "exploits",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Mitigations",
                     "relation_name": "mitigates",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6310,12 +6329,12 @@ class Command(BaseCommand):
                 {
                     "label": "Derived From",
                     "relation_name": "derives_from",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )
@@ -6336,12 +6355,12 @@ class Command(BaseCommand):
                 {
                     "label": "Refined By",
                     "relation_name": "refines",
-                    "direction": MatrixColumn.Direction.OUTGOING,
+                    "direction": MatrixSource.Direction.OUTGOING,
                 },
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
-                    "direction": MatrixColumn.Direction.INCOMING,
+                    "direction": MatrixSource.Direction.INCOMING,
                 },
             ],
         )

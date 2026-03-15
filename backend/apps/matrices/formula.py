@@ -20,7 +20,7 @@ class Number:
 
 @dataclass
 class ColumnRef:
-    column: int  # 1-based display position
+    source_name: str  # name of the source to reference
     field_slug: str
 
 
@@ -46,7 +46,7 @@ _TOKEN_RE = re.compile(
     r"""
     \s*(?:
         (\d+(?:\.\d+)?)              # group 1: number
-        |(\$(\d+)\.([a-zA-Z0-9_-]+)) # group 2: full ref, 3: col num, 4: slug
+        |(\$([a-zA-Z][a-zA-Z0-9_-]*)\.([a-zA-Z0-9_-]+)) # group 2: full ref, 3: source name, 4: slug
         |([+\-*/()]) # group 5: operator / paren
     )\s*
     """,
@@ -69,7 +69,7 @@ def _tokenize(formula: str):
         if m.group(1) is not None:
             tokens.append(("NUM", float(m.group(1))))
         elif m.group(2) is not None:
-            tokens.append(("REF", (int(m.group(3)), m.group(4))))
+            tokens.append(("REF", (m.group(3), m.group(4))))
         elif m.group(5) is not None:
             tokens.append(("OP", m.group(5)))
         pos = m.end()
@@ -141,8 +141,8 @@ class _Parser:
             return Number(tok[1])
         if tok[0] == "REF":
             self.consume()
-            col, slug = tok[1]
-            return ColumnRef(col, slug)
+            source_name, slug = tok[1]
+            return ColumnRef(source_name, slug)
         if tok == ("OP", "("):
             self.consume()
             node = self._expr()
@@ -162,13 +162,13 @@ def parse_formula(formula: str) -> ASTNode:
     return _Parser(tokens).parse()
 
 
-def extract_references(node: ASTNode) -> list[tuple[int, str]]:
-    """Return all (column_position, field_slug) pairs referenced in the AST."""
+def extract_references(node: ASTNode) -> list[tuple[str, str]]:
+    """Return all (source_name, field_slug) pairs referenced in the AST."""
     refs = []
 
     def walk(n):
         if isinstance(n, ColumnRef):
-            refs.append((n.column, n.field_slug))
+            refs.append((n.source_name, n.field_slug))
         elif isinstance(n, BinOp):
             walk(n.left)
             walk(n.right)
@@ -179,15 +179,15 @@ def extract_references(node: ASTNode) -> list[tuple[int, str]]:
     return refs
 
 
-def evaluate(node: ASTNode, context: dict[tuple[int, str], float | None]) -> float | None:
+def evaluate(node: ASTNode, context: dict[tuple[str, str], float | None]) -> float | None:
     """
-    Evaluate the AST given a context mapping (column, slug) → numeric value.
+    Evaluate the AST given a context mapping (source_name, field_slug) → numeric value.
     Returns None if any referenced value is None or on division by zero.
     """
     if isinstance(node, Number):
         return node.value
     if isinstance(node, ColumnRef):
-        val = context.get((node.column, node.field_slug))
+        val = context.get((node.source_name, node.field_slug))
         return val
     if isinstance(node, UnaryNeg):
         val = evaluate(node.operand, context)

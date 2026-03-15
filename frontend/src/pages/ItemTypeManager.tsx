@@ -9,8 +9,9 @@ import {
   deleteCustomField,
   deleteItemType,
 } from "../api/items";
-import type { ItemType } from "../types";
+import type { ItemType, TableFieldColumnSpec } from "../types";
 import { useAuth } from "../auth/AuthContext";
+import TableColumnSchemaEditor from "../components/TableColumnSchemaEditor";
 
 export default function ItemTypeManager() {
   const queryClient = useQueryClient();
@@ -92,6 +93,7 @@ function ItemTypeCard({
     options: {} as Record<string, unknown>,
   });
   const [choices, setChoices] = useState("");
+  const [tableColumns, setTableColumns] = useState<TableFieldColumnSpec[]>([]);
 
   const addFieldMutation = useMutation({
     mutationFn: () => {
@@ -100,6 +102,8 @@ function ItemTypeCard({
         payload.options = {
           choices: choices.split(",").map((c) => c.trim()),
         };
+      } else if (newField.field_kind === "table") {
+        payload.options = { columns: tableColumns };
       }
       return addCustomField(itemType.id, payload);
     },
@@ -114,6 +118,7 @@ function ItemTypeCard({
         options: {},
       });
       setChoices("");
+      setTableColumns([]);
     },
   });
 
@@ -278,6 +283,8 @@ function ItemTypeCard({
                     <option value="boolean">Boolean</option>
                     <option value="date">Date</option>
                     <option value="choice">Choice</option>
+                    <option value="mermaid">Mermaid Diagram</option>
+                    <option value="table">Table</option>
                   </select>
                 </div>
               </div>
@@ -297,6 +304,20 @@ function ItemTypeCard({
                 </div>
               )}
 
+              {newField.field_kind === "table" && (
+                <div>
+                  <label className="text-xs font-medium text-gray-600">
+                    Table Columns
+                  </label>
+                  <div className="mt-1">
+                    <TableColumnSchemaEditor
+                      value={tableColumns}
+                      onChange={setTableColumns}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -312,7 +333,12 @@ function ItemTypeCard({
               <div className="flex gap-2">
                 <button
                   onClick={() => addFieldMutation.mutate()}
-                  disabled={!newField.name || addFieldMutation.isPending}
+                  disabled={
+                    !newField.name ||
+                    addFieldMutation.isPending ||
+                    (newField.field_kind === "table" &&
+                      (tableColumns.length === 0 || tableColumns[0].kind !== "traversal"))
+                  }
                   className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   Add

@@ -98,4 +98,21 @@ class AdminChangePasswordSerializer(serializers.Serializer):
 class SiteSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteSettings
-        fields = ["registration_enabled", "mailbox_limit"]
+        fields = [
+            "registration_enabled",
+            "mailbox_limit",
+            "ai_enabled",
+            "ai_provider_type",
+            "ai_api_url",
+            "ai_api_key",
+            "ai_model",
+        ]
+        extra_kwargs = {
+            "ai_api_key": {"write_only": True},
+        }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Indicate whether a key is configured without exposing it
+        data["ai_api_key_set"] = bool(instance.ai_api_key)
+        return data

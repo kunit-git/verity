@@ -1,16 +1,17 @@
 from django.db.models import Prefetch
+from rest_framework import serializers as drf_serializers
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounts.permissions import ReadOnlyOrEditor
-from apps.items.models import CustomFieldDefinition, CustomFieldValue, Item
+from apps.items.models import CustomFieldValue, Item
 from apps.relations.models import ItemRelation, RelationType
 from apps.vaults.mixins import VaultScopedMixin
 from apps.vaults.permissions import HasVaultAccess, VaultNotLocked
-from .formula import evaluate, extract_references, parse_formula
-from .models import Matrix, MatrixColumn
+from .models import Matrix, MatrixAnnotation, MatrixDisplayColumn, MatrixSource
 from .serializers import MatrixSerializer, MatrixWriteSerializer
+from .traversal import compute_row_hash, evaluate_formulas, run_traversal
 
 
 class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
@@ -19,11 +20,12 @@ class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         return Matrix.objects.select_related("created_by").prefetch_related(
             Prefetch(
-                "columns",
-                queryset=MatrixColumn.objects.select_related(
+                "sources",
+                queryset=MatrixSource.objects.select_related(
                     "seed_item_type", "seed_container", "relation_type"
                 ),
             ),
+            "display_columns",
         ).filter(vault=self.current_vault)
 
     def get_serializer_class(self):
@@ -34,88 +36,136 @@ class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="data")
     def data(self, request, pk=None):
         matrix = self.get_object()
-        columns = list(
-            MatrixColumn.objects.filter(matrix=matrix).select_related(
+        sources = list(
+            MatrixSource.objects.filter(matrix=matrix).select_related(
                 "seed_item_type", "seed_container", "relation_type"
             ).order_by("position")
         )
 
-        if not columns:
+        if not sources:
             return Response({"columns": [], "rows": []})
 
-        seed_col = columns[0]
+        seed_src = sources[0]
 
         # Build seed items
         seed_qs = Item.objects.select_related("item_type").filter(
-            item_type=seed_col.seed_item_type
+            item_type=seed_src.seed_item_type
         )
-        if seed_col.seed_container:
+        if seed_src.seed_container:
             comp_types = RelationType.objects.filter(kind=RelationType.Kind.COMPOSITION)
             child_ids = ItemRelation.objects.filter(
                 relation_type__in=comp_types,
-                source=seed_col.seed_container,
+                source=seed_src.seed_container,
             ).values_list("target_id", flat=True)
             seed_qs = seed_qs.filter(id__in=child_ids)
 
-        rows = [[item] for item in seed_qs]
+        seed_items = list(seed_qs)
 
-        # Track which column indices are formula columns
-        formula_col_indices = set()
+        # Build name-to-source-index map (including seed at index 0)
+        name_to_row_idx = {src.name: i for i, src in enumerate(sources)}
 
-        # Pass 1: Traverse relations, insert placeholders for formula columns
-        for col_idx, col in enumerate(columns[1:], start=1):
-            if col.column_kind == MatrixColumn.Kind.FORMULA:
-                formula_col_indices.add(col_idx)
-                rows = [row + [None] for row in rows]
-                continue
+        # Convert non-seed sources to generic spec dicts
+        non_seed_specs = [
+            {
+                "kind": src.kind,
+                "name": src.name,
+                "relation_type_id": str(src.relation_type_id) if src.relation_type_id else None,
+                "direction": src.direction,
+                "formula": src.formula,
+                "source_ref": src.source_ref,
+                "field_slug": src.field_slug,
+            }
+            for src in sources[1:]
+        ]
 
-            if not col.relation_type or not col.direction:
-                rows = [row + [None] for row in rows]
-                continue
+        rows, formula_col_indices, non_traversal_col_indices = run_traversal(
+            non_seed_specs, seed_items
+        )
 
-            new_rows = []
-            for row in rows:
-                # Find the most recent non-formula Item cell
-                last_item = None
-                for i in range(len(row) - 1, -1, -1):
-                    if i not in formula_col_indices and row[i] is not None:
-                        last_item = row[i]
-                        break
+        # Evaluate formula columns
+        if formula_col_indices:
+            seed_spec = {"name": seed_src.name, "kind": "seed"}
+            all_specs = [seed_spec] + non_seed_specs
+            evaluate_formulas(all_specs, rows, formula_col_indices, non_traversal_col_indices)
 
-                if last_item is None:
-                    new_rows.append(row + [None])
+        # Compute row hashes for annotation lookup
+        annotation_source_names = [
+            src.name
+            for src in sources
+            if src.kind == "annotation"
+        ]
+
+        annotation_lookup: dict[tuple, str] = {}
+        if annotation_source_names and rows:
+            row_hashes = [compute_row_hash(row, non_traversal_col_indices) for row in rows]
+            annotations = MatrixAnnotation.objects.filter(
+                matrix=matrix,
+                column_slug__in=annotation_source_names,
+                row_hash__in=row_hashes,
+            )
+            for ann in annotations:
+                annotation_lookup[(ann.column_slug, ann.row_hash)] = ann.value
+        else:
+            row_hashes = []
+
+        # Resolve item_field sources
+        item_field_sources = [
+            src for src in sources if src.kind == "item_field"
+        ]
+        item_field_lookup: dict[tuple, object] = {}
+        if item_field_sources and rows:
+            for src in item_field_sources:
+                ref_idx = name_to_row_idx.get(src.source_ref)
+                if ref_idx is None or not src.field_slug:
                     continue
+                item_ids = {
+                    row[ref_idx].id
+                    for row in rows
+                    if ref_idx < len(row) and row[ref_idx] is not None and hasattr(row[ref_idx], "id")
+                }
+                if not item_ids:
+                    continue
+                cfvs = CustomFieldValue.objects.filter(
+                    item_id__in=item_ids,
+                    field_definition__slug=src.field_slug,
+                ).select_related("field_definition")
+                for cfv in cfvs:
+                    item_field_lookup[(str(cfv.item_id), src.field_slug)] = cfv.value
 
-                if col.direction == MatrixColumn.Direction.OUTGOING:
-                    rels = ItemRelation.objects.filter(
-                        relation_type=col.relation_type,
-                        source=last_item,
-                    ).select_related("target", "target__item_type")
-                    matched = [r.target for r in rels]
-                else:
-                    rels = ItemRelation.objects.filter(
-                        relation_type=col.relation_type,
-                        target=last_item,
-                    ).select_related("source", "source__item_type")
-                    matched = [r.source for r in rels]
+        # Load display columns for response ordering
+        display_columns = list(
+            MatrixDisplayColumn.objects.filter(matrix=matrix).order_by("position")
+        )
 
-                if matched:
-                    for m in matched:
-                        new_rows.append(row + [m])
-                else:
-                    new_rows.append(row + [None])
+        def serialize_cell(source_name, row, row_hash):
+            src_idx = name_to_row_idx.get(source_name)
+            if src_idx is None:
+                return None
+            src = sources[src_idx]
 
-            rows = new_rows
+            if src.kind == "formula":
+                cell = row[src_idx] if src_idx < len(row) else None
+                return {"value": cell} if cell is not None else None
 
-        # Pass 2: Evaluate formula columns
-        if formula_col_indices and rows:
-            self._evaluate_formulas(columns, rows, formula_col_indices)
+            if src.kind == "annotation":
+                value = annotation_lookup.get((source_name, row_hash), "")
+                return {
+                    "annotation": True,
+                    "value": value,
+                    "row_hash": row_hash,
+                    "column_slug": source_name,
+                }
 
-        def serialize_cell(cell, col_idx):
-            if col_idx in formula_col_indices:
-                if cell is None:
-                    return None
-                return {"value": cell}
+            if src.kind == "item_field":
+                ref_idx = name_to_row_idx.get(src.source_ref)
+                source_item = row[ref_idx] if ref_idx is not None and ref_idx < len(row) else None
+                if source_item is not None and hasattr(source_item, "id"):
+                    value = item_field_lookup.get((str(source_item.id), src.field_slug))
+                    return {"item_field": True, "value": value}
+                return {"item_field": True, "value": None}
+
+            # seed or traversal
+            cell = row[src_idx] if src_idx < len(row) else None
             if cell is None:
                 return None
             return {
@@ -125,112 +175,66 @@ class MatrixViewSet(VaultScopedMixin, viewsets.ModelViewSet):
                 "item_type_slug": cell.item_type.slug,
             }
 
+        serialized_rows = []
+        for row_idx, row in enumerate(rows):
+            row_hash = row_hashes[row_idx] if row_hashes else compute_row_hash(row, non_traversal_col_indices)
+            serialized_rows.append([
+                serialize_cell(dc.source_name, row, row_hash)
+                for dc in display_columns
+            ])
+
         return Response({
             "columns": [
                 {
-                    "position": col.position,
-                    "label": col.label,
-                    "kind": col.column_kind,
+                    "position": dc.position,
+                    "heading": dc.heading,
+                    "source": dc.source_name,
+                    "kind": sources[name_to_row_idx[dc.source_name]].kind
+                    if dc.source_name in name_to_row_idx else None,
+                    "slug": dc.source_name
+                    if dc.source_name in name_to_row_idx
+                    and sources[name_to_row_idx[dc.source_name]].kind == "annotation"
+                    else None,
                 }
-                for col in columns
+                for dc in display_columns
             ],
-            "rows": [
-                [serialize_cell(cell, col_idx) for col_idx, cell in enumerate(row)]
-                for row in rows
-            ],
+            "rows": serialized_rows,
         })
 
-    def _evaluate_formulas(self, columns, rows, formula_col_indices):
-        """Evaluate all formula columns in-place on the rows."""
-        for col_idx in sorted(formula_col_indices):
-            col = columns[col_idx]
-            ast = parse_formula(col.formula)
-            refs = extract_references(ast)
+    @action(detail=True, methods=["patch"], url_path="annotate")
+    def annotate(self, request, pk=None):
+        """Upsert an annotation value for a specific annotation source and row."""
+        matrix = self.get_object()
 
-            if not refs:
-                continue
+        column_slug = request.data.get("column_slug", "").strip()
+        row_hash = request.data.get("row_hash", "").strip()
+        value = request.data.get("value", "")
 
-            # Build a map: display number (1-based) → column index in rows
-            # User writes $1 for the first column (position 0), $2 for position 1, etc.
-            pos_to_idx = {c.position + 1: i for i, c in enumerate(columns)}
+        if not column_slug:
+            raise drf_serializers.ValidationError({"column_slug": "This field is required."})
+        if not row_hash:
+            raise drf_serializers.ValidationError({"row_hash": "This field is required."})
 
-            # Collect all item IDs per referenced column position
-            ref_col_positions = {r[0] for r in refs}
-            ref_slugs = {r[1] for r in refs}
-            item_ids_by_col = {}
-            for ref_pos in ref_col_positions:
-                idx = pos_to_idx.get(ref_pos)
-                if idx is None or idx in formula_col_indices:
-                    continue
-                ids = set()
-                for row in rows:
-                    cell = row[idx]
-                    if cell is not None and hasattr(cell, "id"):
-                        ids.add(cell.id)
-                item_ids_by_col[ref_pos] = ids
+        # Verify the column_slug exists as an annotation source in this matrix
+        exists = MatrixSource.objects.filter(
+            matrix=matrix,
+            kind=MatrixSource.Kind.ANNOTATION,
+            name=column_slug,
+        ).exists()
+        if not exists:
+            raise drf_serializers.ValidationError(
+                {"column_slug": f"No annotation source with name '{column_slug}' in this matrix."}
+            )
 
-            # Batch-load custom field values
-            all_item_ids = set()
-            for ids in item_ids_by_col.values():
-                all_item_ids |= ids
+        annotation, _ = MatrixAnnotation.objects.update_or_create(
+            matrix=matrix,
+            column_slug=column_slug,
+            row_hash=row_hash,
+            defaults={"value": value, "updated_by": request.user},
+        )
 
-            if not all_item_ids:
-                continue
-
-            # Load field definitions for the referenced slugs
-            field_defs = {
-                fd.slug: fd
-                for fd in CustomFieldDefinition.objects.filter(slug__in=ref_slugs)
-            }
-
-            # Load custom field values
-            cfvs = CustomFieldValue.objects.filter(
-                item_id__in=all_item_ids,
-                field_definition__slug__in=ref_slugs,
-            ).select_related("field_definition")
-
-            # Build lookup: (item_id, slug) → raw value
-            raw_values = {}
-            for cfv in cfvs:
-                raw_values[(cfv.item_id, cfv.field_definition.slug)] = cfv.value
-
-            # Evaluate each row
-            for row in rows:
-                context = {}
-                has_missing = False
-                for ref_pos, slug in refs:
-                    idx = pos_to_idx.get(ref_pos)
-                    if idx is None or idx in formula_col_indices:
-                        has_missing = True
-                        break
-                    cell = row[idx]
-                    if cell is None or not hasattr(cell, "id"):
-                        has_missing = True
-                        break
-                    raw = raw_values.get((cell.id, slug))
-                    numeric = self._to_numeric(raw, field_defs.get(slug))
-                    context[(ref_pos, slug)] = numeric
-
-                if has_missing:
-                    row[col_idx] = None
-                else:
-                    row[col_idx] = evaluate(ast, context)
-
-    @staticmethod
-    def _to_numeric(raw_value, field_def):
-        """Convert a custom field value to a number for formula evaluation."""
-        if raw_value is None:
-            return None
-
-        # Choice fields: 1-based index in the choices list
-        if field_def and field_def.field_kind == "choice":
-            choices = (field_def.options or {}).get("choices", [])
-            if raw_value in choices:
-                return float(choices.index(raw_value) + 1)
-            return None
-
-        # Numeric types
-        try:
-            return float(raw_value)
-        except (TypeError, ValueError):
-            return None
+        return Response({
+            "column_slug": annotation.column_slug,
+            "row_hash": annotation.row_hash,
+            "value": annotation.value,
+        })

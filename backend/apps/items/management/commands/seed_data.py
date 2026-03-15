@@ -1,63 +1,25 @@
-from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
+from django.db import connection
 
 from apps.relations.models import RelationType
-from apps.vaults.models import Vault, VaultMembership
-
-User = get_user_model()
+from apps.vaults.models import Vault
 
 
 class Command(BaseCommand):
-    help = "Seed built-in data: admin user, default vault, and relation types"
+    help = "Seed built-in relation types for all existing vaults"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--reset",
+            action="store_true",
+            help="Drop and recreate the database before seeding (destroys all data)",
+        )
 
     def handle(self, *args, **options):
-        # Remove deprecated types
-        removed, _ = RelationType.all_objects.filter(name="is_aggregation_of").hard_delete()
-        if removed:
-            self.stdout.write("  Removed: deprecated RelationType 'is_aggregation_of'")
-
-        from apps.items.models import ItemType
-
-        removed, _ = ItemType.all_objects.filter(slug="container").hard_delete()
-        if removed:
-            self.stdout.write("  Removed: deprecated ItemType 'Container'")
-
-        # Ensure admin user exists
-        admin, created = User.objects.get_or_create(
-            username="admin",
-            defaults={
-                "email": "admin@example.com",
-                "is_site_admin": True,
-                "is_staff": True,
-                "is_superuser": True,
-            },
-        )
-        if created:
-            admin.set_password("admin282!")
-            admin.save(update_fields=["password"])
-            self.stdout.write("  Created: admin user (admin / admin)")
-        else:
-            self.stdout.write("  Exists: admin user")
-
-        # Ensure default vault exists
-        vault, created = Vault.objects.get_or_create(
-            slug="default",
-            defaults={
-                "name": "Default",
-                "description": "Default vault.",
-                "created_by": admin,
-            },
-        )
-        if created:
-            self.stdout.write("  Created: Default vault")
-        else:
-            self.stdout.write("  Exists: Default vault")
-
-        # Ensure admin is a member and has active vault
-        VaultMembership.objects.get_or_create(vault=vault, user=admin)
-        if not admin.active_vault_id:
-            admin.active_vault = vault
-            admin.save(update_fields=["active_vault"])
+        if options["reset"]:
+            self._reset_database()
 
         # Built-in relation types — ensure each vault has them
         relation_types = [
@@ -87,3 +49,38 @@ class Command(BaseCommand):
                 self.stdout.write(f"    {status}: RelationType '{name}'")
 
         self.stdout.write(self.style.SUCCESS("Seed data loaded successfully."))
+
+    def _reset_database(self):
+        """Drop and recreate the database, then run migrations."""
+        db_settings = settings.DATABASES["default"]
+        db_name = db_settings["NAME"]
+        db_user = db_settings["USER"]
+        db_password = db_settings["PASSWORD"]
+        db_host = db_settings["HOST"]
+        db_port = db_settings["PORT"]
+
+        self.stdout.write(f"Resetting database '{db_name}'...")
+
+        # Connect to the 'postgres' maintenance database to drop/create
+        import psycopg
+
+        conninfo = f"host={db_host} port={db_port} user={db_user} password={db_password} dbname=postgres"
+        with psycopg.connect(conninfo, autocommit=True) as conn:
+            # Terminate existing connections
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                [db_name],
+            )
+            conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
+            conn.execute(f'CREATE DATABASE "{db_name}" OWNER "{db_user}"')
+
+        self.stdout.write(f"  Database '{db_name}' recreated.")
+
+        # Re-establish Django's connection to the fresh database
+        connection.close()
+
+        # Run migrations
+        self.stdout.write("  Running migrations...")
+        call_command("migrate", verbosity=0)
+        self.stdout.write("  Migrations complete.")

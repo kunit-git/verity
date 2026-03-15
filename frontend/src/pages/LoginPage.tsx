@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { getSiteSettings } from "../api/users";
@@ -8,6 +8,8 @@ import { Compass } from "lucide-react";
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const notice = (location.state as { message?: string } | null)?.message;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -43,6 +45,11 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {notice && (
+            <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700">
+              {notice}
+            </div>
+          )}
           {error && (
             <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
               {error}

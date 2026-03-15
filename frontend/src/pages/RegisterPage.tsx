@@ -25,7 +25,12 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(username, email, password);
-      navigate("/");
+      navigate("/login", {
+        state: {
+          message:
+            "Your account is pending admin approval. You will be able to sign in once it is approved.",
+        },
+      });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Registration failed";

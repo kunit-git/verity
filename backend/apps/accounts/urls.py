@@ -5,6 +5,7 @@ from . import views
 
 urlpatterns = [
     path("settings/", views.SiteSettingsView.as_view(), name="site-settings"),
+    path("setup/", views.InitialSetupView.as_view(), name="initial-setup"),
     path("register/", views.RegisterView.as_view(), name="register"),
     path("login/", TokenObtainPairView.as_view(), name="token_obtain"),
     path("refresh/", TokenRefreshView.as_view(), name="token_refresh"),

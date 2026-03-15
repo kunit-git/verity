@@ -1,22 +1,40 @@
 import pytest
+from django.contrib.auth import get_user_model
 from apps.accounts.models import SiteSettings
 
-
+User = get_user_model()
 URL = "/api/v1/auth/register/"
 
 
 class TestRegistration:
-    def test_valid_registration(self, api_client):
+    def test_valid_registration_returns_202(self, api_client):
         r = api_client.post(URL, {
             "username": "newuser",
             "email": "new@example.com",
             "password": "securepass123",
         }, format="json")
-        assert r.status_code == 201
-        assert r.data["username"] == "newuser"
-        assert r.data["email"] == "new@example.com"
-        assert "id" in r.data
-        assert "password" not in r.data
+        assert r.status_code == 202
+
+    def test_registration_creates_locked_account(self, api_client):
+        api_client.post(URL, {
+            "username": "newuser",
+            "email": "new@example.com",
+            "password": "securepass123",
+        }, format="json")
+        user = User.objects.get(username="newuser")
+        assert user.account_status == "locked"
+        assert user.is_active is False
+
+    def test_registered_account_cannot_login(self, api_client):
+        api_client.post(URL, {
+            "username": "newuser",
+            "email": "new@example.com",
+            "password": "securepass123",
+        }, format="json")
+        r = api_client.post("/api/v1/auth/login/", {
+            "username": "newuser", "password": "securepass123",
+        }, format="json")
+        assert r.status_code == 401
 
     def test_duplicate_username(self, api_client):
         api_client.post(URL, {

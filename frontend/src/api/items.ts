@@ -1,5 +1,6 @@
 import api from "./client";
 import type {
+  DocumentEditorData,
   DocumentTemplateResponse,
   Item,
   ItemListItem,
@@ -159,4 +160,9 @@ export async function saveDocumentTemplate(itemTypeId: string, template: string)
 
 export async function deleteDocumentTemplate(itemTypeId: string) {
   await api.delete(`/item-types/${itemTypeId}/template/`);
+}
+
+export async function getDocumentEditorData(itemId: string) {
+  const { data } = await api.get<DocumentEditorData>(`/items/${itemId}/editor-data/`);
+  return data;
 }

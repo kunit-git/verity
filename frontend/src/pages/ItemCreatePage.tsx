@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getItemTypes, createItem, getItem, updateItem } from "../api/items";
 import { getRelationTypes, createRelation } from "../api/relations";
 import type { CustomFieldDefinition } from "../types";
+import TableFieldWidget from "../components/TableFieldWidget";
 
 export default function ItemCreatePage({ editId }: { editId?: string }) {
   const navigate = useNavigate();
@@ -204,6 +205,7 @@ export default function ItemCreatePage({ editId }: { editId?: string }) {
                   key={fd.id}
                   field={fd}
                   value={customFields[fd.slug]}
+                  editId={editId}
                   onChange={(val) =>
                     setCustomFields((prev) => ({ ...prev, [fd.slug]: val }))
                   }
@@ -241,10 +243,12 @@ export default function ItemCreatePage({ editId }: { editId?: string }) {
 function DynamicField({
   field,
   value,
+  editId,
   onChange,
 }: {
   field: CustomFieldDefinition;
   value: unknown;
+  editId?: string;
   onChange: (val: unknown) => void;
 }) {
   const label = (
@@ -323,7 +327,27 @@ function DynamicField({
           />
         </div>
       );
-    default: // text
+    case "table":
+      if (editId) {
+        return (
+          <TableFieldWidget
+            itemId={editId}
+            fieldSlug={field.slug}
+            label={field.name}
+          />
+        );
+      }
+      return (
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            {field.name}
+          </label>
+          <p className="mt-1 text-sm text-gray-400 italic">
+            Table data is available after the item is created.
+          </p>
+        </div>
+      );
+    default: // text, mermaid, etc.
       return (
         <div>
           {label}

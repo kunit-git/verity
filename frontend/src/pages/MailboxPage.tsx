@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Download, Trash2, Inbox, X, ArrowLeft } from "lucide-react";
 import { useConfirm } from "../components/ConfirmDialog";
+import MermaidDiagram from "../components/MermaidDiagram";
 import { getMailboxArtifacts, getMailboxArtifact, deleteMailboxArtifact } from "../api/mailbox";
 import type { MailboxArtifactDetail } from "../types";
 
@@ -98,7 +99,30 @@ export default function MailboxPage() {
         </div>
         <div className="flex-1 overflow-y-auto bg-white p-8">
           <article className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700 prose-hr:border-gray-200 prose-table:text-gray-700 prose-th:text-gray-900 prose-td:text-gray-700">
-            <Markdown remarkPlugins={[remarkGfm]}>{viewing.content}</Markdown>
+            <Markdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                pre({ children }) {
+                  // pre receives the unrendered <code> element as children,
+                  // so check its className to detect mermaid blocks
+                  const child = Array.isArray(children) ? children[0] : children;
+                  const isMermaid = (child as React.ReactElement)?.props?.className?.includes("language-mermaid");
+                  if (isMermaid) {
+                    return <div className="my-4">{children}</div>;
+                  }
+                  return <pre>{children}</pre>;
+                },
+                code({ className, children }) {
+                  const lang = /language-(\w+)/.exec(className || "")?.[1];
+                  if (lang === "mermaid") {
+                    return <MermaidDiagram source={String(children).trimEnd()} />;
+                  }
+                  return <code className={className}>{children}</code>;
+                },
+              }}
+            >
+              {viewing.content}
+            </Markdown>
           </article>
         </div>
       </div>

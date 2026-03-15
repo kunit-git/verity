@@ -53,10 +53,25 @@ export interface CustomFieldDefinition {
   id: string;
   name: string;
   slug: string;
-  field_kind: "text" | "integer" | "decimal" | "boolean" | "date" | "choice";
+  field_kind: "text" | "integer" | "decimal" | "boolean" | "date" | "choice" | "mermaid" | "table";
   is_required: boolean;
   options: Record<string, unknown>;
   display_order: number;
+}
+
+// Column spec for item-embedded table fields (stored in CustomFieldDefinition.options.columns)
+export type TableFieldColumnKind = "traversal" | "item_field" | "annotation" | "formula";
+
+export interface TableFieldColumnSpec {
+  name: string;
+  kind: TableFieldColumnKind;
+  label: string;
+  relation_type_id?: string;
+  direction?: "outgoing" | "incoming";
+  field_slug?: string;
+  source_ref?: string;
+  slug?: string;
+  formula?: string;
 }
 
 export interface ItemType {
@@ -206,13 +221,13 @@ export interface MailboxArtifactDetail extends MailboxArtifact {
 
 // ---- Tables ----
 
-export type ColumnKind = "seed" | "traversal" | "formula";
+export type SourceKind = "seed" | "traversal" | "formula" | "annotation" | "item_field";
 
-export interface TableColumn {
+export interface TableSource {
   id: string;
+  name: string;
   position: number;
-  label: string;
-  column_kind: ColumnKind;
+  kind: SourceKind;
   seed_item_type: string | null;
   seed_item_type_name: string | null;
   seed_container: string | null;
@@ -223,6 +238,15 @@ export interface TableColumn {
   relation_reverse_label: string | null;
   direction: "outgoing" | "incoming" | null;
   formula: string | null;
+  source_ref: string | null;
+  field_slug: string | null;
+}
+
+export interface TableDisplayColumn {
+  id: string;
+  position: number;
+  heading: string;
+  source: string;
 }
 
 export interface Table {
@@ -231,32 +255,42 @@ export interface Table {
   description: string;
   created_by: number;
   created_by_username: string;
-  columns: TableColumn[];
+  sources: TableSource[];
+  columns: TableDisplayColumn[];
   created_at: string;
   updated_at: string;
 }
 
-export interface TableColumnPayload {
-  position: number;
-  label: string;
-  column_kind?: ColumnKind;
+export interface TableSourcePayload {
+  name: string;
+  kind: SourceKind;
   seed_item_type?: string | null;
   seed_container?: string | null;
   relation_type?: string | null;
   direction?: "outgoing" | "incoming" | null;
   formula?: string | null;
+  source_ref?: string | null;
+  field_slug?: string | null;
+}
+
+export interface TableDisplayColumnPayload {
+  heading: string;
+  source: string;
 }
 
 export interface TablePayload {
   name: string;
   description?: string;
-  columns: TableColumnPayload[];
+  sources: TableSourcePayload[];
+  columns: TableDisplayColumnPayload[];
 }
 
 export interface TableDataColumn {
   position: number;
-  label: string;
-  kind: ColumnKind;
+  heading: string;
+  source: string;
+  kind: SourceKind;
+  slug: string | null;
 }
 
 export interface TableDataCell {
@@ -270,13 +304,104 @@ export interface TableFormulaCell {
   value: number;
 }
 
-export function isFormulaCell(
-  cell: TableDataCell | TableFormulaCell | null,
-): cell is TableFormulaCell {
-  return cell !== null && "value" in cell && !("id" in cell);
+export interface TableAnnotationCell {
+  annotation: true;
+  value: string;
+  row_hash: string;
+  column_slug: string;
+}
+
+export interface TableItemFieldCell {
+  item_field: true;
+  value: unknown;
+}
+
+export type AnyTableCell =
+  | TableDataCell
+  | TableFormulaCell
+  | TableAnnotationCell
+  | TableItemFieldCell
+  | null;
+
+export function isFormulaCell(cell: AnyTableCell): cell is TableFormulaCell {
+  return cell !== null && "value" in cell && !("id" in cell) && !("annotation" in cell) && !("item_field" in cell);
+}
+
+export function isAnnotationCell(cell: AnyTableCell): cell is TableAnnotationCell {
+  return cell !== null && (cell as TableAnnotationCell).annotation === true;
+}
+
+export function isItemFieldCell(cell: AnyTableCell): cell is TableItemFieldCell {
+  return cell !== null && (cell as TableItemFieldCell).item_field === true;
 }
 
 export interface TableData {
   columns: TableDataColumn[];
-  rows: (TableDataCell | TableFormulaCell | null)[][];
+  rows: AnyTableCell[][];
+}
+
+// ---- Document Editor ----
+
+export interface EditorFieldDefinition {
+  slug: string;
+  name: string;
+  field_kind: "text" | "integer" | "decimal" | "boolean" | "date" | "choice" | "mermaid" | "table";
+  options: Record<string, unknown>;
+}
+
+export interface EditorItem {
+  id: string;
+  depth: number;
+  title: string;
+  description: string;
+  status: string;
+  item_type_id: string;
+  item_type_name: string;
+  current_version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  custom_fields: Record<string, unknown>;
+  custom_field_definitions: EditorFieldDefinition[];
+  template: string | null;
+  default_template: string;
+}
+
+export interface DocumentEditorData {
+  items: EditorItem[];
+}
+
+// ---- Agent ----
+
+export interface AgentConversation {
+  id: string;
+  title: string;
+  context_item: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  tool_calls: unknown[];
+  tool_call_id: string;
+  tool_name: string;
+  created_at: string;
+}
+
+export interface AgentPendingAction {
+  id: string;
+  action_type: "create_item" | "update_item" | "create_relation";
+  payload: Record<string, unknown>;
+  status: "pending" | "accepted" | "rejected" | "executed" | "failed";
+  result: Record<string, unknown>;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface AgentConversationDetail extends AgentConversation {
+  messages: AgentMessage[];
+  pending_actions: AgentPendingAction[];
 }

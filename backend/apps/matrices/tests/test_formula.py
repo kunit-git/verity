@@ -44,9 +44,9 @@ class TestParse:
         assert ast.op == "/"
 
     def test_column_ref(self):
-        ast = parse_formula("$1.weight")
+        ast = parse_formula("$reqs.weight")
         assert isinstance(ast, ColumnRef)
-        assert ast.column == 1
+        assert ast.source_name == "reqs"
         assert ast.field_slug == "weight"
 
     def test_nested_parens(self):
@@ -60,7 +60,7 @@ class TestParse:
         assert isinstance(ast.operand, Number)
 
     def test_complex_expression(self):
-        ast = parse_formula("$1.a + $2.b * 3")
+        ast = parse_formula("$reqs.a + $tests.b * 3")
         assert isinstance(ast, BinOp)
         assert ast.op == "+"
 
@@ -72,18 +72,24 @@ class TestParse:
         with pytest.raises(ParseError):
             parse_formula("1 @ 2")
 
+    def test_hyphenated_source_name(self):
+        ast = parse_formula("$req-status.value")
+        assert isinstance(ast, ColumnRef)
+        assert ast.source_name == "req-status"
+        assert ast.field_slug == "value"
+
 
 class TestExtractReferences:
     def test_single_ref(self):
-        ast = parse_formula("$1.slug")
+        ast = parse_formula("$reqs.slug")
         refs = extract_references(ast)
-        assert refs == [(1, "slug")]
+        assert refs == [("reqs", "slug")]
 
     def test_multiple_refs(self):
-        ast = parse_formula("$1.a + $2.b")
+        ast = parse_formula("$reqs.a + $tests.b")
         refs = extract_references(ast)
-        assert (1, "a") in refs
-        assert (2, "b") in refs
+        assert ("reqs", "a") in refs
+        assert ("tests", "b") in refs
 
     def test_no_refs(self):
         ast = parse_formula("1 + 2")
@@ -93,43 +99,43 @@ class TestExtractReferences:
 
 class TestEvaluate:
     def test_simple_addition(self):
-        ast = parse_formula("$1.a + $2.b")
-        result = evaluate(ast, {(1, "a"): 10.0, (2, "b"): 5.0})
+        ast = parse_formula("$reqs.a + $tests.b")
+        result = evaluate(ast, {("reqs", "a"): 10.0, ("tests", "b"): 5.0})
         assert result == 15.0
 
     def test_multiplication(self):
-        ast = parse_formula("$1.x * 2")
-        result = evaluate(ast, {(1, "x"): 3.0})
+        ast = parse_formula("$reqs.x * 2")
+        result = evaluate(ast, {("reqs", "x"): 3.0})
         assert result == 6.0
 
     def test_none_propagation(self):
-        ast = parse_formula("$1.a + $2.b")
-        result = evaluate(ast, {(1, "a"): 10.0, (2, "b"): None})
+        ast = parse_formula("$reqs.a + $tests.b")
+        result = evaluate(ast, {("reqs", "a"): 10.0, ("tests", "b"): None})
         assert result is None
 
     def test_missing_ref_returns_none(self):
-        ast = parse_formula("$1.missing")
+        ast = parse_formula("$reqs.missing")
         result = evaluate(ast, {})
         assert result is None
 
     def test_division_by_zero(self):
-        ast = parse_formula("$1.a / $2.b")
-        result = evaluate(ast, {(1, "a"): 10.0, (2, "b"): 0.0})
+        ast = parse_formula("$reqs.a / $tests.b")
+        result = evaluate(ast, {("reqs", "a"): 10.0, ("tests", "b"): 0.0})
         assert result is None
 
     def test_unary_neg(self):
-        ast = parse_formula("-$1.a")
-        result = evaluate(ast, {(1, "a"): 5.0})
+        ast = parse_formula("-$reqs.a")
+        result = evaluate(ast, {("reqs", "a"): 5.0})
         assert result == -5.0
 
     def test_unary_neg_none(self):
-        ast = parse_formula("-$1.a")
-        result = evaluate(ast, {(1, "a"): None})
+        ast = parse_formula("-$reqs.a")
+        result = evaluate(ast, {("reqs", "a"): None})
         assert result is None
 
     def test_complex_expression(self):
-        ast = parse_formula("($1.a + $2.b) * 2")
-        result = evaluate(ast, {(1, "a"): 3.0, (2, "b"): 7.0})
+        ast = parse_formula("($reqs.a + $tests.b) * 2")
+        result = evaluate(ast, {("reqs", "a"): 3.0, ("tests", "b"): 7.0})
         assert result == 20.0
 
     def test_number_literal(self):
@@ -139,7 +145,7 @@ class TestEvaluate:
 
 class TestValidateFormula:
     def test_valid(self):
-        assert validate_formula("$1.a + $2.b") == []
+        assert validate_formula("$reqs.a + $tests.b") == []
 
     def test_valid_number(self):
         assert validate_formula("42") == []

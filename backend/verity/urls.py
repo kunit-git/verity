@@ -9,4 +9,5 @@ urlpatterns = [
     path("api/v1/", include("apps.relations.urls")),
     path("api/v1/", include("apps.matrices.urls")),
     path("api/v1/", include("apps.mailbox.urls")),
+    path("api/v1/agent/", include("apps.agent.urls")),
 ]

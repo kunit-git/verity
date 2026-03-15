@@ -6,82 +6,91 @@ from apps.relations.models import RelationType
 URL = "/api/v1/tables/"
 
 
+def _seed_source(item_type_id, name="seed"):
+    return {"name": name, "kind": "seed", "seed_item_type": str(item_type_id)}
+
+
+def _traversal_source(relation_type_id, direction="outgoing", name="linked"):
+    return {
+        "name": name,
+        "kind": "traversal",
+        "relation_type": str(relation_type_id),
+        "direction": direction,
+    }
+
+
+def _display_col(heading, source):
+    return {"heading": heading, "source": source}
+
+
 class TestMatrixCreate:
-    def test_create_with_seed_column(self, editor_client, item_type, vault):
+    def test_create_with_seed_source(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Test Matrix",
-            "columns": [{
-                "position": 0,
-                "label": "Requirements",
-                "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Requirements", "seed")],
         }, format="json")
         assert r.status_code == 201
         assert r.data["name"] == "Test Matrix"
+        assert len(r.data["sources"]) == 1
         assert len(r.data["columns"]) == 1
 
-    def test_create_with_traversal_column(self, editor_client, item_type, vault):
+    def test_create_with_traversal_source(self, editor_client, item_type, vault):
         trace = RelationType.objects.get(vault=vault, kind="trace")
         r = editor_client.post(URL, {
             "name": "Traversal Matrix",
+            "sources": [
+                _seed_source(item_type.id),
+                _traversal_source(trace.id),
+            ],
             "columns": [
-                {
-                    "position": 0, "label": "Seed", "column_kind": "seed",
-                    "seed_item_type": str(item_type.id),
-                },
-                {
-                    "position": 1, "label": "Traces", "column_kind": "traversal",
-                    "relation_type": str(trace.id), "direction": "outgoing",
-                },
+                _display_col("Seed", "seed"),
+                _display_col("Linked", "linked"),
             ],
         }, format="json")
         assert r.status_code == 201
+        assert len(r.data["sources"]) == 2
         assert len(r.data["columns"]) == 2
 
-    def test_create_with_formula_column(self, editor_client, item_type, vault):
+    def test_create_with_formula_source(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Formula Matrix",
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "$seed.weight + 10"},
+            ],
             "columns": [
-                {
-                    "position": 0, "label": "Seed", "column_kind": "seed",
-                    "seed_item_type": str(item_type.id),
-                },
-                {
-                    "position": 1, "label": "Calc", "column_kind": "formula",
-                    "formula": "$1.weight + 10",
-                },
+                _display_col("Items", "seed"),
+                _display_col("Calc", "calc"),
             ],
         }, format="json")
         assert r.status_code == 201
 
-    def test_seed_not_at_position_zero(self, editor_client, item_type, vault):
+    def test_first_source_must_be_seed(self, editor_client, item_type, vault):
         trace = RelationType.objects.get(vault=vault, kind="trace")
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [{
-                "position": 1, "label": "Wrong", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_traversal_source(trace.id)],
+            "columns": [_display_col("Items", "linked")],
         }, format="json")
         assert r.status_code == 400
 
     def test_seed_without_item_type(self, editor_client, vault):
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [{
-                "position": 0, "label": "Missing", "column_kind": "seed",
-            }],
+            "sources": [{"name": "seed", "kind": "seed"}],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
     def test_traversal_without_relation_type(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [
-                {"position": 0, "label": "Seed", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Missing", "column_kind": "traversal", "direction": "outgoing"},
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "linked", "kind": "traversal", "direction": "outgoing"},
             ],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
@@ -89,84 +98,110 @@ class TestMatrixCreate:
         trace = RelationType.objects.get(vault=vault, kind="trace")
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [
-                {"position": 0, "label": "Seed", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Missing", "column_kind": "traversal", "relation_type": str(trace.id)},
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "linked", "kind": "traversal", "relation_type": str(trace.id)},
             ],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
     def test_formula_without_formula(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [
-                {"position": 0, "label": "Seed", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "No Formula", "column_kind": "formula"},
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula"},
             ],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
     def test_invalid_formula_syntax(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [
-                {"position": 0, "label": "Seed", "column_kind": "seed", "seed_item_type": str(item_type.id)},
-                {"position": 1, "label": "Bad Formula", "column_kind": "formula", "formula": "@invalid@"},
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "@invalid@"},
             ],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
     def test_seed_with_formula(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Bad",
-            "columns": [{
-                "position": 0, "label": "Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id), "formula": "$1.a",
+            "sources": [{
+                "name": "seed", "kind": "seed",
+                "seed_item_type": str(item_type.id), "formula": "$x.a",
             }],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 400
 
     def test_viewer_forbidden(self, viewer_client, item_type, vault):
         r = viewer_client.post(URL, {
             "name": "Nope",
-            "columns": [{
-                "position": 0, "label": "Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         assert r.status_code == 403
 
+    def test_duplicate_source_names(self, editor_client, item_type, vault):
+        r = editor_client.post(URL, {
+            "name": "Bad",
+            "sources": [
+                _seed_source(item_type.id, name="dup"),
+                {"name": "dup", "kind": "formula", "formula": "1 + 2"},
+            ],
+            "columns": [_display_col("Items", "dup")],
+        }, format="json")
+        assert r.status_code == 400
+
+    def test_formula_references_unknown_source(self, editor_client, item_type, vault):
+        r = editor_client.post(URL, {
+            "name": "Bad",
+            "sources": [
+                _seed_source(item_type.id),
+                {"name": "calc", "kind": "formula", "formula": "$nonexistent.weight + 1"},
+            ],
+            "columns": [_display_col("Items", "seed")],
+        }, format="json")
+        assert r.status_code == 400
+
+    def test_display_column_references_unknown_source(self, editor_client, item_type, vault):
+        r = editor_client.post(URL, {
+            "name": "Bad",
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Items", "nonexistent")],
+        }, format="json")
+        assert r.status_code == 400
+
 
 class TestMatrixUpdate:
-    def test_patch_replaces_columns(self, editor_client, item_type, vault):
+    def test_patch_replaces_sources_and_columns(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Update Me",
-            "columns": [{
-                "position": 0, "label": "Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         matrix_id = r.data["id"]
         r = editor_client.patch(f"{URL}{matrix_id}/", {
             "name": "Updated",
-            "columns": [{
-                "position": 0, "label": "New Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id, name="items")],
+            "columns": [_display_col("New Items", "items")],
         }, format="json")
         assert r.status_code == 200
         assert r.data["name"] == "Updated"
-        assert r.data["columns"][0]["label"] == "New Seed"
+        assert r.data["columns"][0]["heading"] == "New Items"
 
 
 class TestMatrixDelete:
     def test_delete(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Delete Me",
-            "columns": [{
-                "position": 0, "label": "Seed", "column_kind": "seed",
-                "seed_item_type": str(item_type.id),
-            }],
+            "sources": [_seed_source(item_type.id)],
+            "columns": [_display_col("Items", "seed")],
         }, format="json")
         matrix_id = r.data["id"]
         r = editor_client.delete(f"{URL}{matrix_id}/")

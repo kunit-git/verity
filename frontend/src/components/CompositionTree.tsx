@@ -24,7 +24,7 @@ export default function CompositionTree({ currentItemId }: Props) {
   const { data: ancestors } = useQuery({
     queryKey: ["tree", "ancestors", currentItemId],
     queryFn: () => getItemAncestors(currentItemId!),
-    enabled: !!currentItemId,
+    enabled: !!currentItemId && currentItemId !== "new",
   });
 
   useEffect(() => {

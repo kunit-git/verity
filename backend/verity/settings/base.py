@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "apps.matrices",
     "apps.mailbox",
     "apps.vaults",
+    "apps.agent",
 ]
 
 MIDDLEWARE = [

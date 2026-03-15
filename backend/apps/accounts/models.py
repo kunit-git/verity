@@ -48,11 +48,26 @@ class User(AbstractUser):
 class SiteSettings(models.Model):
     """Singleton model for site-wide configuration."""
 
+    class AIProviderType(models.TextChoices):
+        OPENAI = "openai", "OpenAI"
+        ANTHROPIC = "anthropic", "Anthropic"
+
     registration_enabled = models.BooleanField(default=True)
     mailbox_limit = models.PositiveIntegerField(
         default=0,
         help_text="Maximum mailbox documents per user. 0 means unlimited.",
     )
+
+    # AI agent configuration
+    ai_enabled = models.BooleanField(default=False)
+    ai_provider_type = models.CharField(
+        max_length=20,
+        choices=AIProviderType.choices,
+        blank=True,
+    )
+    ai_api_url = models.URLField(blank=True, help_text="Custom base URL for provider API.")
+    ai_api_key = models.CharField(max_length=500, blank=True)
+    ai_model = models.CharField(max_length=100, blank=True, help_text="e.g. gpt-4o, claude-sonnet-4-20250514")
 
     class Meta:
         db_table = "accounts_sitesettings"

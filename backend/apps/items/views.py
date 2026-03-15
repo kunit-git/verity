@@ -397,8 +397,328 @@ class ItemViewSet(VaultScopedMixin, viewsets.ModelViewSet):
         serializer = ItemVersionSerializer(version)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["get"], url_path="editor-data")
+    def editor_data(self, request, pk=None):
+        """Return structured data for each item in the composition tree rooted here.
+
+        Used by the document editor mode to render editable templates for the
+        current item and all its composition children.
+        """
+        item = self.get_object()
+        composition_types = self._composition_types()
+
+        templates = {
+            dt.item_type_id: dt.template
+            for dt in DocumentTemplate.objects.all()
+        }
+
+        seen = set()
+        result_items = []
+
+        def _default_tmpl(cf_defs):
+            lines = [
+                "{{heading}} {{title}}",
+                "",
+                "**Type:** {{item_type}} | **Status:** {{status}} | **Version:** {{current_version}}",
+                "",
+                "{{description}}",
+                "",
+            ]
+            for cf in cf_defs:
+                lines.append(f"- **{cf['name']}:** {{{{{cf['slug']}}}}}")
+            lines.append("")
+            lines.append("*Created by {{created_by}} on {{created_at}} · Updated {{updated_at}}*")
+            return "\n".join(lines)
+
+        def _collect(current_id, depth):
+            if current_id in seen or depth > 6:
+                return
+            seen.add(current_id)
+
+            try:
+                current_item = (
+                    Item.objects.select_related("item_type", "created_by")
+                    .get(pk=current_id)
+                )
+            except Item.DoesNotExist:
+                return
+
+            field_values = (
+                CustomFieldValue.objects.filter(item=current_item)
+                .select_related("field_definition")
+                .order_by("field_definition__display_order")
+            )
+            custom_fields = {fv.field_definition.slug: fv.value for fv in field_values}
+
+            cf_defs = list(
+                CustomFieldDefinition.objects.filter(item_type=current_item.item_type)
+                .order_by("display_order")
+                .values("slug", "name", "field_kind", "options")
+            )
+
+            result_items.append({
+                "id": str(current_item.id),
+                "depth": depth,
+                "title": current_item.title,
+                "description": current_item.description or "",
+                "status": current_item.status,
+                "item_type_id": str(current_item.item_type_id),
+                "item_type_name": current_item.item_type.name,
+                "current_version": current_item.current_version,
+                "created_by": current_item.created_by.username,
+                "created_at": current_item.created_at.strftime("%Y-%m-%d %H:%M"),
+                "updated_at": current_item.updated_at.strftime("%Y-%m-%d %H:%M"),
+                "custom_fields": custom_fields,
+                "custom_field_definitions": cf_defs,
+                "template": templates.get(current_item.item_type_id),
+                "default_template": _default_tmpl(cf_defs),
+            })
+
+            child_relations = (
+                ItemRelation.objects.filter(
+                    relation_type__in=composition_types,
+                    source=current_item,
+                )
+                .order_by("position", "created_at")
+                .values_list("target_id", flat=True)
+            )
+            for child_id in child_relations:
+                _collect(child_id, depth + 1)
+
+        _collect(str(item.id), 1)
+        return Response({"items": result_items})
+
+    @action(
+        detail=True, methods=["get"],
+        url_path=r"table-field/(?P<field_slug>[^/.]+)/data",
+        url_name="table-field-data",
+    )
+    def table_field_data(self, request, pk=None, field_slug=None):
+        """
+        Return traversal data for an item-embedded table field.
+
+        The owning item is the implicit seed; the column schema comes from
+        CustomFieldDefinition.options["columns"].
+        """
+        from apps.items.models import CustomFieldValue, ItemTableAnnotation
+        from apps.matrices.traversal import compute_row_hash, evaluate_formulas, run_traversal
+
+        item = self.get_object()
+        try:
+            field_def = CustomFieldDefinition.objects.get(
+                item_type=item.item_type,
+                slug=field_slug,
+                field_kind=CustomFieldDefinition.FieldKind.TABLE,
+            )
+        except CustomFieldDefinition.DoesNotExist:
+            return Response(
+                {"detail": f"No table field with slug '{field_slug}' on this item type."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        raw_column_specs = field_def.options.get("columns", [])
+        # Ensure each spec has a name for the traversal engine
+        column_specs = []
+        for i, spec in enumerate(raw_column_specs):
+            s = dict(spec)
+            if "name" not in s:
+                s["name"] = s.get("slug") or f"col{i}"
+            column_specs.append(s)
+
+        rows, formula_col_indices, non_traversal_col_indices = run_traversal(
+            column_specs, [item]
+        )
+
+        # Drop rows where the first traversal column has no match.
+        # (For item-embedded tables the owning item is always the implicit seed at row[0];
+        # if row[1] is None there are no linked items — no row to show.)
+        rows = [row for row in rows if len(row) > 1 and row[1] is not None]
+
+        # Evaluate formula columns (item is implicit seed at row[0])
+        if formula_col_indices:
+            # Use a dummy seed spec with a reserved name (not referenceable)
+            dummy_seed = {"name": "_seed", "kind": "seed"}
+            all_specs_with_seed = [dummy_seed] + column_specs
+            evaluate_formulas(all_specs_with_seed, rows, formula_col_indices, non_traversal_col_indices)
+
+        # Compute row hashes and load annotations
+        annotation_col_slugs = [
+            spec.get("slug") or spec["name"]
+            for spec in column_specs
+            if spec.get("kind") == "annotation"
+        ]
+        annotation_lookup: dict[tuple, str] = {}
+        row_hashes = []
+        if rows:
+            row_hashes = [compute_row_hash(row, non_traversal_col_indices) for row in rows]
+            if annotation_col_slugs:
+                anns = ItemTableAnnotation.objects.filter(
+                    item=item,
+                    field_definition=field_def,
+                    column_slug__in=annotation_col_slugs,
+                    row_hash__in=row_hashes,
+                )
+                for ann in anns:
+                    annotation_lookup[(ann.column_slug, ann.row_hash)] = ann.value
+
+        # Build name-to-row-idx map (col0 at row[1], col1 at row[2], etc.)
+        name_to_row_idx = {spec["name"]: i + 1 for i, spec in enumerate(column_specs)}
+
+        # Resolve item_field columns
+        item_field_lookup: dict[tuple, object] = {}
+        item_field_specs = [spec for spec in column_specs if spec.get("kind") == "item_field"]
+        if item_field_specs and rows:
+            for spec in item_field_specs:
+                source_ref = spec.get("source_ref", "")
+                field_slug_val = spec.get("field_slug")
+                if not source_ref or not field_slug_val:
+                    continue
+                row_src_idx = name_to_row_idx.get(source_ref)
+                if row_src_idx is None:
+                    continue
+                item_ids = {
+                    row[row_src_idx].id
+                    for row in rows
+                    if row_src_idx < len(row) and row[row_src_idx] is not None
+                }
+                if not item_ids:
+                    continue
+                cfvs = CustomFieldValue.objects.filter(
+                    item_id__in=item_ids,
+                    field_definition__slug=field_slug_val,
+                ).select_related("field_definition")
+                for cfv in cfvs:
+                    item_field_lookup[(str(cfv.item_id), field_slug_val)] = cfv.value
+
+        def serialize_cell(cell, col_idx, row, row_hash):
+            # col_idx 0 = implicit seed (not in column_specs); col_idx 1+ = column_specs[col_idx-1]
+            if col_idx == 0:
+                return None  # implicit seed row is not serialized
+            spec = column_specs[col_idx - 1]
+            kind = spec.get("kind", "traversal")
+
+            if kind == "formula":
+                return {"value": cell} if cell is not None else None
+
+            if kind == "annotation":
+                col_slug = spec.get("slug", "")
+                value = annotation_lookup.get((col_slug, row_hash), "")
+                return {
+                    "annotation": True,
+                    "value": value,
+                    "row_hash": row_hash,
+                    "column_slug": col_slug,
+                }
+
+            if kind == "item_field":
+                source_ref = spec.get("source_ref", "")
+                field_slug_val = spec.get("field_slug", "")
+                row_src_idx = name_to_row_idx.get(source_ref)
+                source_item = row[row_src_idx] if row_src_idx is not None and row_src_idx < len(row) else None
+                if source_item is not None and hasattr(source_item, "id"):
+                    value = item_field_lookup.get((str(source_item.id), field_slug_val))
+                    return {"item_field": True, "value": value}
+                return {"item_field": True, "value": None}
+
+            # traversal
+            if cell is None:
+                return None
+            return {
+                "id": str(cell.id),
+                "title": cell.title,
+                "item_type_name": cell.item_type.name,
+                "item_type_slug": cell.item_type.slug,
+            }
+
+        serialized_rows = []
+        for row_idx, row in enumerate(rows):
+            row_hash = row_hashes[row_idx] if row_hashes else compute_row_hash(row, non_traversal_col_indices)
+            # Skip col 0 (implicit seed) in output — start from col 1
+            serialized_rows.append([
+                serialize_cell(cell, col_idx, row, row_hash)
+                for col_idx, cell in enumerate(row)
+                if col_idx > 0
+            ])
+
+        return Response({
+            "columns": [
+                {
+                    "position": i,
+                    "heading": spec.get("label", ""),
+                    "source": spec["name"],
+                    "kind": spec.get("kind"),
+                    "slug": spec.get("slug") or spec.get("field_slug") or None,
+                }
+                for i, spec in enumerate(column_specs)
+            ],
+            "rows": serialized_rows,
+        })
+
+    @action(
+        detail=True, methods=["patch"],
+        url_path=r"table-field/(?P<field_slug>[^/.]+)/annotate",
+        url_name="table-field-annotate",
+    )
+    def table_field_annotate(self, request, pk=None, field_slug=None):
+        """Upsert an annotation value for a specific annotation column and row in a table field."""
+        from rest_framework import serializers as drf_serializers
+        from apps.items.models import ItemTableAnnotation
+
+        item = self.get_object()
+        try:
+            field_def = CustomFieldDefinition.objects.get(
+                item_type=item.item_type,
+                slug=field_slug,
+                field_kind=CustomFieldDefinition.FieldKind.TABLE,
+            )
+        except CustomFieldDefinition.DoesNotExist:
+            return Response(
+                {"detail": f"No table field with slug '{field_slug}' on this item type."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        column_slug = request.data.get("column_slug", "").strip()
+        row_hash = request.data.get("row_hash", "").strip()
+        value = request.data.get("value", "")
+
+        if not column_slug:
+            return Response({"column_slug": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        if not row_hash:
+            return Response({"row_hash": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify the column_slug exists as an annotation column in this field's schema
+        columns = field_def.options.get("columns", [])
+        valid_slugs = {
+            col["slug"] for col in columns
+            if col.get("kind") == "annotation" and col.get("slug")
+        }
+        if column_slug not in valid_slugs:
+            return Response(
+                {"column_slug": [f"No annotation column with slug '{column_slug}' in this table field."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        annotation, _ = ItemTableAnnotation.objects.update_or_create(
+            item=item,
+            field_definition=field_def,
+            column_slug=column_slug,
+            row_hash=row_hash,
+            defaults={"value": value, "updated_by": request.user},
+        )
+
+        return Response({
+            "column_slug": annotation.column_slug,
+            "row_hash": annotation.row_hash,
+            "value": annotation.value,
+        })
+
     @action(detail=True, methods=["get"])
     def ancestors(self, request, pk=None):
+        import uuid as _uuid
+        try:
+            _uuid.UUID(pk)
+        except (ValueError, AttributeError):
+            return Response([])
         comp_types = self._composition_types()
         if not comp_types.exists():
             return Response([])

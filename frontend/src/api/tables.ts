@@ -34,3 +34,17 @@ export async function getTableData(id: string) {
   const { data } = await api.get<TableData>(`/tables/${id}/data/`);
   return data;
 }
+
+export async function patchMatrixAnnotation(
+  tableId: string,
+  columnSlug: string,
+  rowHash: string,
+  value: string,
+): Promise<{ column_slug: string; row_hash: string; value: string }> {
+  const { data } = await api.patch(`/tables/${tableId}/annotate/`, {
+    column_slug: columnSlug,
+    row_hash: rowHash,
+    value,
+  });
+  return data;
+}

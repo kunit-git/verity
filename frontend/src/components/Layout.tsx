@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useMatch, useNavigate } from "react-router-d
 import { useQuery } from "@tanstack/react-query";
 import CompositionTree from "./CompositionTree";
 import ChangePasswordDialog from "./ChangePasswordDialog";
+import AgentPanel from "./AgentPanel";
 import {
   LayoutDashboard,
   List,
@@ -20,9 +21,13 @@ import {
   ChevronDown,
   Vault,
   Lock,
+  Bot,
+  HelpCircle,
 } from "lucide-react";
+import { HelpModal, useHelpTopicId } from "../pages/HelpSystem";
 import { useAuth } from "../auth/AuthContext";
 import * as vaultsApi from "../api/vaults";
+import { getAgentStatus } from "../api/agent";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -39,6 +44,7 @@ const adminItems = [
 const siteAdminItems = [
   { to: "/manage/users", icon: Users, label: "Users" },
   { to: "/manage/vaults", icon: Vault, label: "Vaults" },
+  { to: "/manage/ai", icon: Bot, label: "AI Settings" },
 ];
 
 const vaultAdminItems = [
@@ -48,8 +54,11 @@ const vaultAdminItems = [
 export default function Layout() {
   const { user, logout, selectVault } = useAuth();
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const helpTopicId = useHelpTopicId();
   const [collapsed, setCollapsed] = useState(false);
   const [showVaultDropdown, setShowVaultDropdown] = useState(false);
+  const [showAgentPanel, setShowAgentPanel] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const itemMatch = useMatch("/items/:id");
@@ -60,6 +69,11 @@ export default function Layout() {
   const { data: myVaults } = useQuery({
     queryKey: ["my-vaults"],
     queryFn: vaultsApi.getMyVaults,
+  });
+
+  const { data: agentStatus } = useQuery({
+    queryKey: ["agent-status"],
+    queryFn: getAgentStatus,
   });
 
   const handleVaultSwitch = async (vaultId: string) => {
@@ -204,6 +218,31 @@ export default function Layout() {
             </div>
           </div>
 
+          {/* AI Assistant */}
+          {agentStatus?.ai_enabled && (
+            <div className="mt-4">
+              {!collapsed && (
+                <h3 className="px-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  AI
+                </h3>
+              )}
+              <div className="mt-1 space-y-1">
+                <button
+                  onClick={() => setShowAgentPanel((v) => !v)}
+                  title={collapsed ? "AI Assistant" : undefined}
+                  className={`flex w-full items-center rounded-md px-2 py-2 text-sm font-medium transition-colors ${collapsed ? "justify-center" : "gap-2"} ${
+                    showAgentPanel
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  <Bot className="h-4 w-4 shrink-0" />
+                  {!collapsed && "AI Assistant"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Admin section */}
           <div className="mt-4">
             {!collapsed && (
@@ -239,6 +278,13 @@ export default function Layout() {
           {collapsed ? (
             <div className="flex flex-col items-center gap-1">
               <button
+                onClick={() => setShowHelp(true)}
+                className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-blue-500"
+                title="Help"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </button>
+              <button
                 onClick={() => setShowPasswordDialog(true)}
                 className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                 title="Change password"
@@ -262,6 +308,13 @@ export default function Layout() {
                 <p className="text-xs text-gray-500">{user?.vault_role}{user?.is_site_admin ? " · site admin" : ""}</p>
               </div>
               <div className="flex gap-0.5">
+                <button
+                  onClick={() => setShowHelp(true)}
+                  className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-blue-500"
+                  title="Help"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => setShowPasswordDialog(true)}
                   className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
@@ -298,6 +351,17 @@ export default function Layout() {
 
       {showPasswordDialog && (
         <ChangePasswordDialog onClose={() => setShowPasswordDialog(false)} />
+      )}
+
+      {showHelp && (
+        <HelpModal initialTopicId={helpTopicId} onClose={() => setShowHelp(false)} />
+      )}
+
+      {showAgentPanel && (
+        <AgentPanel
+          onClose={() => setShowAgentPanel(false)}
+          contextItemId={currentItemId}
+        />
       )}
     </div>
   );

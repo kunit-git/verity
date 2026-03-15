@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
+from django.db import OperationalError, transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from .models import SiteSettings
@@ -14,6 +16,11 @@ from .serializers import (
     AdminChangePasswordSerializer,
     SiteSettingsSerializer,
 )
+
+
+class _SetupThrottle(AnonRateThrottle):
+    scope = "initial_setup"
+    rate = "10/hour"
 
 User = get_user_model()
 
@@ -35,6 +42,74 @@ class SiteSettingsView(APIView):
         return Response(serializer.data)
 
 
+class InitialSetupView(APIView):
+    """
+    GET  — returns {"setup_required": bool}. Returns 503 if the database is unavailable.
+    POST — creates the first site-admin account. Rejected with 409 if any site admin
+           already exists. Rate-limited to 10 requests/hour per IP.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get_throttles(self):
+        if self.request.method == "POST":
+            return [_SetupThrottle()]
+        return []
+
+    def get(self, request):
+        try:
+            setup_required = not User.objects.filter(is_site_admin=True).exists()
+        except OperationalError:
+            return Response(
+                {"detail": "Database unavailable. Please retry later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"setup_required": setup_required})
+
+    def post(self, request):
+        username = request.data.get("username", "").strip()
+        password = request.data.get("password", "")
+
+        errors = {}
+        if not username:
+            errors["username"] = ["This field is required."]
+        if len(password) < 8:
+            errors["password"] = ["Password must be at least 8 characters."]
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                # Re-verify inside the transaction to close the race window.
+                if User.objects.filter(is_site_admin=True).exists():
+                    return Response(
+                        {"detail": "Setup already completed. An admin account already exists."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                if User.objects.filter(username=username).exists():
+                    return Response(
+                        {"username": ["A user with this username already exists."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                User.objects.create_user(
+                    username=username,
+                    password=password,
+                    is_site_admin=True,
+                    is_staff=True,
+                    is_superuser=True,
+                )
+        except OperationalError:
+            return Response(
+                {"detail": "Database unavailable. Please retry later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            {"detail": "Admin account created successfully."},
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
@@ -45,7 +120,16 @@ class RegisterView(generics.CreateAPIView):
                 {"detail": "Registration is currently disabled."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return super().create(request, *args, **kwargs)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        user.account_status = "locked"
+        user.is_active = False
+        user.save(update_fields=["account_status", "is_active"])
+        return Response(
+            {"detail": "Registration received. Your account is pending admin approval."},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class MeView(generics.RetrieveUpdateAPIView):

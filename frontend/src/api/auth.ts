@@ -16,12 +16,12 @@ export async function register(
   email: string,
   password: string
 ) {
-  const { data } = await api.post("/auth/register/", {
+  const response = await api.post("/auth/register/", {
     username,
     email,
     password,
   });
-  return data;
+  return response;
 }
 
 export async function getMe() {
@@ -32,4 +32,14 @@ export async function getMe() {
 export function logout() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+}
+
+export async function checkSetupStatus(): Promise<{ setup_required: boolean }> {
+  const { data } = await api.get<{ setup_required: boolean }>("/auth/setup/");
+  return data;
+}
+
+export async function performSetup(username: string, password: string) {
+  const { data } = await api.post("/auth/setup/", { username, password });
+  return data;
 }

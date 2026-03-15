@@ -36,6 +36,21 @@ export async function adminChangePassword(
 export interface SiteSettings {
   registration_enabled: boolean;
   mailbox_limit: number;
+  ai_enabled: boolean;
+  ai_provider_type: "openai" | "anthropic" | "";
+  ai_api_url: string;
+  ai_api_key_set: boolean;
+  ai_model: string;
+}
+
+export interface SiteSettingsPatch {
+  registration_enabled?: boolean;
+  mailbox_limit?: number;
+  ai_enabled?: boolean;
+  ai_provider_type?: "openai" | "anthropic" | "";
+  ai_api_url?: string;
+  ai_api_key?: string;
+  ai_model?: string;
 }
 
 export async function getSiteSettings(): Promise<SiteSettings> {
@@ -44,7 +59,7 @@ export async function getSiteSettings(): Promise<SiteSettings> {
 }
 
 export async function updateSiteSettings(
-  patch: Partial<SiteSettings>
+  patch: SiteSettingsPatch
 ): Promise<SiteSettings> {
   const { data } = await api.patch<SiteSettings>("/auth/settings/", patch);
   return data;

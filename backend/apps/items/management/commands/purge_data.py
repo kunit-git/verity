@@ -13,16 +13,18 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.agent.models import Conversation, Message, PendingAction
 from apps.items.models import (
     CustomFieldDefinition,
     CustomFieldValue,
     DocumentTemplate,
     Item,
+    ItemTableAnnotation,
     ItemType,
     ItemVersion,
 )
 from apps.mailbox.models import MailboxArtifact
-from apps.matrices.models import Matrix, MatrixColumn
+from apps.matrices.models import Matrix, MatrixAnnotation, MatrixDisplayColumn, MatrixSource
 from apps.relations.models import ItemRelation, RelationType
 from apps.vaults.models import Vault, VaultAuditLog, VaultMembership
 
@@ -52,9 +54,15 @@ class Command(BaseCommand):
         self.stdout.write("Purging all data...")
 
         # Delete in dependency order (children before parents)
-        MatrixColumn.all_objects.all().hard_delete()
+        PendingAction.all_objects.all().hard_delete()
+        Message.all_objects.all().hard_delete()
+        Conversation.all_objects.all().hard_delete()
+        MatrixAnnotation.all_objects.all().hard_delete()
+        MatrixDisplayColumn.all_objects.all().hard_delete()
+        MatrixSource.all_objects.all().hard_delete()
         Matrix.all_objects.all().hard_delete()
         ItemRelation.all_objects.all().hard_delete()
+        ItemTableAnnotation.all_objects.all().hard_delete()
         CustomFieldValue.all_objects.all().hard_delete()
         ItemVersion.all_objects.all().hard_delete()
         Item.all_objects.all().hard_delete()

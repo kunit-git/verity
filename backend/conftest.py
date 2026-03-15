@@ -103,15 +103,25 @@ class MatrixFactory(factory.django.DjangoModelFactory):
     created_by = factory.SubFactory(UserFactory)
 
 
-class MatrixColumnFactory(factory.django.DjangoModelFactory):
+class MatrixSourceFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = "matrices.MatrixColumn"
+        model = "matrices.MatrixSource"
+
+    matrix = factory.SubFactory(MatrixFactory)
+    name = factory.Sequence(lambda n: f"source-{n}")
+    position = 0
+    kind = "seed"
+    seed_item_type = factory.SubFactory(ItemTypeFactory)
+
+
+class MatrixDisplayColumnFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "matrices.MatrixDisplayColumn"
 
     matrix = factory.SubFactory(MatrixFactory)
     position = 0
-    label = "Seed"
-    column_kind = "seed"
-    seed_item_type = factory.SubFactory(ItemTypeFactory)
+    heading = "Column"
+    source_name = "source"
 
 
 class MailboxArtifactFactory(factory.django.DjangoModelFactory):

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Pencil,
   RefreshCw,
@@ -8,11 +8,19 @@ import {
   ChevronDown,
   ChevronsUpDown,
 } from "lucide-react";
-import { getTable, getTableData } from "../api/tables";
-import type { TableDataCell, TableFormulaCell } from "../types";
-import { isFormulaCell } from "../types";
+import { getTable, getTableData, patchMatrixAnnotation } from "../api/tables";
+import type {
+  AnyTableCell,
+  TableAnnotationCell,
+  TableDataCell,
+} from "../types";
+import {
+  isAnnotationCell,
+  isFormulaCell,
+  isItemFieldCell,
+} from "../types";
 
-type Row = (TableDataCell | TableFormulaCell | null)[];
+type Row = AnyTableCell[];
 
 interface RowGroup {
   seedId: string | null;
@@ -23,7 +31,7 @@ function groupRowsBySeed(rows: Row[]): RowGroup[] {
   const groups: RowGroup[] = [];
   for (const row of rows) {
     const seedCell = row[0];
-    const seedId = seedCell && "id" in seedCell ? seedCell.id : null;
+    const seedId = seedCell && "id" in seedCell ? (seedCell as TableDataCell).id : null;
     const last = groups[groups.length - 1];
     if (last && last.seedId === seedId) {
       last.rows.push(row);
@@ -37,6 +45,7 @@ function groupRowsBySeed(rows: Row[]): RowGroup[] {
 export default function TableViewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const { data: table } = useQuery({
@@ -54,6 +63,39 @@ export default function TableViewPage() {
     queryKey: ["tableData", id],
     queryFn: () => getTableData(id!),
     enabled: !!id,
+  });
+
+  const annotateMutation = useMutation({
+    mutationFn: ({
+      columnSlug,
+      rowHash,
+      value,
+    }: {
+      columnSlug: string;
+      rowHash: string;
+      value: string;
+    }) => patchMatrixAnnotation(id!, columnSlug, rowHash, value),
+    onSuccess: (result) => {
+      // Update the cache directly instead of a full refetch
+      queryClient.setQueryData(["tableData", id], (old: typeof tableData) => {
+        if (!old) return old;
+        return {
+          ...old,
+          rows: old.rows.map((row) =>
+            row.map((cell) => {
+              if (
+                isAnnotationCell(cell) &&
+                cell.column_slug === result.column_slug &&
+                cell.row_hash === result.row_hash
+              ) {
+                return { ...cell, value: result.value };
+              }
+              return cell;
+            }),
+          ),
+        };
+      });
+    },
   });
 
   const groups = useMemo(
@@ -178,7 +220,10 @@ export default function TableViewPage() {
                             fx
                           </span>
                         )}
-                        {col.label}
+                        {col.kind === "annotation" && (
+                          <span className="mr-1 text-green-400" title="Editable annotation">✎</span>
+                        )}
+                        {col.heading}
                       </th>
                     ))}
                   </tr>
@@ -227,12 +272,12 @@ export default function TableViewPage() {
                                 <div className="min-w-0 flex-1">
                                   <TableCell
                                     cell={cell}
-                                    isFormula={
-                                      tableData.columns[colIdx]?.kind ===
-                                      "formula"
-                                    }
+                                    colKind={tableData.columns[colIdx]?.kind}
                                     onNavigate={(itemId) =>
                                       navigate(`/items/${itemId}`)
+                                    }
+                                    onAnnotate={(columnSlug, rowHash, value) =>
+                                      annotateMutation.mutate({ columnSlug, rowHash, value })
                                     }
                                   />
                                 </div>
@@ -245,11 +290,12 @@ export default function TableViewPage() {
                             ) : (
                               <TableCell
                                 cell={cell}
-                                isFormula={
-                                  tableData.columns[colIdx]?.kind === "formula"
-                                }
+                                colKind={tableData.columns[colIdx]?.kind}
                                 onNavigate={(itemId) =>
                                   navigate(`/items/${itemId}`)
+                                }
+                                onAnnotate={(columnSlug, rowHash, value) =>
+                                  annotateMutation.mutate({ columnSlug, rowHash, value })
                                 }
                               />
                             )}
@@ -270,12 +316,14 @@ export default function TableViewPage() {
 
 function TableCell({
   cell,
-  isFormula,
+  colKind,
   onNavigate,
+  onAnnotate,
 }: {
-  cell: TableDataCell | TableFormulaCell | null;
-  isFormula: boolean;
+  cell: AnyTableCell;
+  colKind: string | undefined;
   onNavigate: (id: string) => void;
+  onAnnotate: (columnSlug: string, rowHash: string, value: string) => void;
 }) {
   if (!cell) {
     return (
@@ -285,7 +333,16 @@ function TableCell({
     );
   }
 
-  if (isFormula && isFormulaCell(cell)) {
+  if (isAnnotationCell(cell)) {
+    return <AnnotationInput cell={cell} onSave={onAnnotate} />;
+  }
+
+  if (isItemFieldCell(cell)) {
+    const display = cell.value != null ? String(cell.value) : "—";
+    return <span className="text-sm text-gray-700">{display}</span>;
+  }
+
+  if (colKind === "formula" && isFormulaCell(cell)) {
     const display =
       Number.isInteger(cell.value) ? cell.value.toString() : cell.value.toFixed(2);
     return (
@@ -298,16 +355,41 @@ function TableCell({
   if ("id" in cell) {
     return (
       <button
-        onClick={() => onNavigate(cell.id)}
+        onClick={() => onNavigate((cell as TableDataCell).id)}
         className="group w-full rounded px-1 py-0.5 text-left hover:bg-blue-50"
       >
         <p className="text-sm font-medium text-gray-800 group-hover:text-blue-700">
-          {cell.title}
+          {(cell as TableDataCell).title}
         </p>
-        <p className="text-xs text-gray-400">{cell.item_type_name}</p>
+        <p className="text-xs text-gray-400">{(cell as TableDataCell).item_type_name}</p>
       </button>
     );
   }
 
   return null;
+}
+
+function AnnotationInput({
+  cell,
+  onSave,
+}: {
+  cell: TableAnnotationCell;
+  onSave: (columnSlug: string, rowHash: string, value: string) => void;
+}) {
+  const [value, setValue] = useState(cell.value);
+
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        if (value !== cell.value) {
+          onSave(cell.column_slug, cell.row_hash, value);
+        }
+      }}
+      placeholder="Add note…"
+      className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-700 placeholder-gray-300 hover:border-gray-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200"
+    />
+  );
 }

@@ -6143,11 +6143,25 @@ class Command(BaseCommand):
                "expected-result": "Complete within 4-hour batch window"},
         )
 
-        # Compose test cases into reports
+        # Compose test cases into their parent containers
         self._compose(stress_report, tc_stress_gfc)
-        self._compose(model_inventory, tc_var_accuracy, tc_cva_convergence)
-        self._compose(var_validation, tc_var_accuracy, tc_pnl_attrib)
+        self._compose(var_validation, tc_var_accuracy, tc_var_perf, tc_pnl_attrib)
         self._compose(cva_validation, tc_cva_convergence, tc_wwr)
+
+        sys_verification = self._item(
+            "report",
+            "System Verification Report",
+            "Consolidated verification report tracking system-level test "
+            "execution and results for the TRP-4000 platform. Covers "
+            "pre-trade checks, regulatory calculations, data failover, "
+            "batch processing, and audit trail verification.",
+            **{"report-date": "2026-01-31",
+               "status": "Draft"},
+        )
+        self._compose(programme, sys_verification)
+        self._compose(sys_verification, tc_pretrade_latency, tc_sa_tb,
+                       tc_audit_trail, tc_data_failover, tc_drc,
+                       tc_eod_batch)
 
         # Verification links
         self._verifies(tc_var_accuracy, req_var_compute, req_var_hist_sim)

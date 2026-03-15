@@ -30,6 +30,17 @@ class RelationTypeSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "is_builtin"]
 
+    def validate_name(self, value):
+        vault = self.instance.vault if self.instance else self.context["request"].user.active_vault
+        qs = RelationType.objects.filter(vault=vault, name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "A relation type with this name already exists in this vault."
+            )
+        return value
+
     def create(self, validated_data):
         validated_data["vault"] = self.context["request"].user.active_vault
         return super().create(validated_data)
@@ -80,6 +91,8 @@ class ItemRelationSerializer(serializers.ModelSerializer):
         rt = data.get("relation_type")
         source = data.get("source")
         target = data.get("target")
+        if source and target and source == target:
+            raise serializers.ValidationError("An item cannot relate to itself.")
         if rt and source and rt.source_item_type_id:
             if source.item_type_id != rt.source_item_type_id:
                 raise serializers.ValidationError(
@@ -89,6 +102,16 @@ class ItemRelationSerializer(serializers.ModelSerializer):
             if target.item_type_id != rt.target_item_type_id:
                 raise serializers.ValidationError(
                     {"target": f"Target item must be of type '{rt.target_item_type.name}'."}
+                )
+        if rt and source and target:
+            qs = ItemRelation.objects.filter(
+                relation_type=rt, source=source, target=target,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "This relation already exists."
                 )
         return data
 

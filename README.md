@@ -210,6 +210,67 @@ Custom fields are passed inline as a flat dict:
 
 ---
 
+## Running Tests
+
+Tests use pytest with a dedicated test settings module. PostgreSQL must be running (the test runner creates and destroys a temporary database automatically).
+
+```bash
+# Ensure PostgreSQL is running
+docker-compose up -d
+
+# Activate the venv from the project root
+source .venv/bin/activate
+
+# Install dependencies (includes test deps)
+pip install -r backend/requirements.txt
+
+# Run all tests
+cd backend
+pytest
+
+# Verbose output
+pytest -v
+
+# Stop on first failure
+pytest -x
+
+# Run a specific app's tests
+pytest apps/accounts/tests/ -v
+pytest apps/vaults/tests/ -v
+pytest apps/items/tests/ -v
+pytest apps/relations/tests/ -v
+pytest apps/matrices/tests/ -v
+pytest apps/mailbox/tests/ -v
+
+# Run a specific test file
+pytest apps/matrices/tests/test_formula.py -v
+
+# Run a specific test class or function
+pytest apps/accounts/tests/test_auth.py::TestLogin -v
+pytest apps/accounts/tests/test_auth.py::TestLogin::test_valid_login -v
+
+# Run with coverage report
+pip install pytest-cov
+pytest --cov=apps --cov-report=term-missing
+```
+
+### Test Structure
+
+```
+backend/
+  conftest.py           # Factories (factory-boy) & shared fixtures
+  pytest.ini            # Pytest configuration
+  apps/
+    accounts/tests/     # Auth, registration, user management
+    vaults/tests/       # Vault CRUD, locking, members, audit log
+    items/tests/        # Item types, items, versions, custom fields, templates, tree
+    relations/tests/    # Relation types, relations, suspect links, navigation
+    matrices/tests/     # Matrix CRUD, data traversal, formula evaluation
+    mailbox/tests/      # Mailbox artifacts, document generation
+```
+
+---
+
 ## Navigation Model
 
 The **ItemNavigator** implements a spatial metaphor for traversing the item graph:

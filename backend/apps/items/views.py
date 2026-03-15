@@ -51,7 +51,10 @@ class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="custom-fields")
     def add_custom_field(self, request, pk=None):
         item_type = self.get_object()
-        serializer = CustomFieldDefinitionSerializer(data=request.data)
+        serializer = CustomFieldDefinitionSerializer(
+            data=request.data,
+            context={"request": request, "item_type": item_type},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save(item_type=item_type)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -75,7 +78,8 @@ class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         serializer = CustomFieldDefinitionSerializer(
-            field, data=request.data, partial=True
+            field, data=request.data, partial=True,
+            context={"request": request, "item_type": item_type},
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()

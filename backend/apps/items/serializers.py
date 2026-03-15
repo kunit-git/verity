@@ -19,6 +19,22 @@ class CustomFieldDefinitionSerializer(serializers.ModelSerializer):
             "display_order",
         ]
 
+    def validate_slug(self, value):
+        item_type = self.context.get("item_type")
+        if self.instance:
+            item_type = self.instance.item_type
+        if item_type:
+            qs = CustomFieldDefinition.objects.filter(
+                item_type=item_type, slug=value,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "A custom field with this slug already exists for this item type."
+                )
+        return value
+
 
 class ItemTypeSerializer(serializers.ModelSerializer):
     custom_fields = CustomFieldDefinitionSerializer(many=True, read_only=True)
@@ -35,6 +51,33 @@ class ItemTypeCreateSerializer(serializers.ModelSerializer):
         model = ItemType
         fields = ["id", "name", "slug", "description", "icon"]
         read_only_fields = ["id"]
+
+    def _get_vault(self):
+        if self.instance:
+            return self.instance.vault
+        return self.context["request"].user.active_vault
+
+    def validate_name(self, value):
+        vault = self._get_vault()
+        qs = ItemType.objects.filter(vault=vault, name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "An item type with this name already exists in this vault."
+            )
+        return value
+
+    def validate_slug(self, value):
+        vault = self._get_vault()
+        qs = ItemType.objects.filter(vault=vault, slug=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "An item type with this slug already exists in this vault."
+            )
+        return value
 
     def create(self, validated_data):
         validated_data["vault"] = self.context["request"].user.active_vault

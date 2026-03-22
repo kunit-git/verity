@@ -106,7 +106,7 @@ export default function MailboxPage() {
                   // pre receives the unrendered <code> element as children,
                   // so check its className to detect mermaid blocks
                   const child = Array.isArray(children) ? children[0] : children;
-                  const isMermaid = (child as React.ReactElement)?.props?.className?.includes("language-mermaid");
+                  const isMermaid = (child as React.ReactElement<{ className?: string }>)?.props?.className?.includes("language-mermaid");
                   if (isMermaid) {
                     return <div className="my-4">{children}</div>;
                   }

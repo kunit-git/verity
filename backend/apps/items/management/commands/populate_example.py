@@ -1,7 +1,7 @@
 """
 Management command: populate_example
 
-Wipes example vaults (if they exist), then populates four realistic examples:
+Wipes example vaults (if they exist), then populates six realistic examples:
 
 1. **AV System** — an Autonomous Vehicle System organised around document
    deliverables: plans, specifications, FMEA analyses, risk assessments,
@@ -22,13 +22,18 @@ Wipes example vaults (if they exist), then populates four realistic examples:
    validation following Basel III/IV, FRTB, BCBS 239, MiFID II, and
    Dodd-Frank.
 
-Item types used (per vault):
-  Project, Plan, Specification, Report, Analysis, Information,
-  Requirement, Risk, Test Case, Failure Mode, Failure Cause,
-  Threat, Vulnerability, Mitigation
-Relation types:
-  Built-in:  is_composed_of, traces_to
-  Custom:    verifies, derives_from, refines, mitigates, causes, exploits
+5. **DoD RFP Response** — a defence-contractor pursuit of a $250M
+   Next-Gen Command & Control (NGCC) contract, with RFP requirements,
+   proposal volumes, compliance matrix, past performance citations,
+   competitive analysis, and color-team gate reviews.
+
+6. **Enterprise Software Deal** — a SaaS analytics company pursuing a
+   $2.4M ARR deal with a global bank, tracking customer requirements,
+   solution mapping, POC scenarios, security questionnaire, stakeholder
+   management, and competitive positioning.
+
+R&D vaults (1–4) share a common schema (Project, Plan, Requirement, etc.).
+Sales vaults (5–6) each have their own domain-specific schemas.
 
 Usage:
     python manage.py populate_example
@@ -47,7 +52,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Populate example vaults (AV System + Avionics FMS + Medical Device + Financial Risk)"
+    help = "Populate example vaults (AV System + Avionics FMS + Medical Device + Financial Risk + DoD RFP + Enterprise Deal)"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -117,6 +122,56 @@ class Command(BaseCommand):
         """Shorthand: threat exploits each vulnerability."""
         for vuln in vulnerabilities:
             self._rel("exploits", threat, vuln)
+
+    # -- Sales-domain shorthand helpers ------------------------------------
+
+    def _responds_to(self, section, *requirements):
+        for req in requirements:
+            self._rel("responds_to", section, req)
+
+    def _demonstrates(self, scenario, *requirements):
+        for req in requirements:
+            self._rel("demonstrates", scenario, req)
+
+    def _evidenced_by(self, response, *citations):
+        for cite in citations:
+            self._rel("evidenced_by", response, cite)
+
+    def _counters(self, source, *targets):
+        for t in targets:
+            self._rel("counters", source, t)
+
+    def _prices(self, element, *requirements):
+        for req in requirements:
+            self._rel("prices", element, req)
+
+    def _clarifies(self, question, *requirements):
+        for req in requirements:
+            self._rel("clarifies", question, req)
+
+    def _addresses(self, component, *requirements):
+        for req in requirements:
+            self._rel("addresses", component, req)
+
+    def _validates(self, scenario, *requirements):
+        for req in requirements:
+            self._rel("validates", scenario, req)
+
+    def _answers(self, response, *requirements):
+        for req in requirements:
+            self._rel("answers", response, req)
+
+    def _competes_with(self, competitor, *components):
+        for comp in components:
+            self._rel("competes_with", competitor, comp)
+
+    def _influences(self, stakeholder, *requirements):
+        for req in requirements:
+            self._rel("influences", stakeholder, req)
+
+    def _covers(self, section, *requirements):
+        for req in requirements:
+            self._rel("covers", section, req)
 
     def _matrix(self, name, description, columns):
         """
@@ -431,6 +486,8 @@ class Command(BaseCommand):
     AVIONICS_VAULT_SLUG = "avionics-fms"
     MEDICAL_VAULT_SLUG = "medical-device"
     FINANCE_VAULT_SLUG = "finance-risk"
+    DOD_VAULT_SLUG = "dod-rfp"
+    ENTERPRISE_VAULT_SLUG = "enterprise-deal"
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -439,6 +496,8 @@ class Command(BaseCommand):
         self._wipe_vault(self.AVIONICS_VAULT_SLUG)
         self._wipe_vault(self.MEDICAL_VAULT_SLUG)
         self._wipe_vault(self.FINANCE_VAULT_SLUG)
+        self._wipe_vault(self.DOD_VAULT_SLUG)
+        self._wipe_vault(self.ENTERPRISE_VAULT_SLUG)
 
         # Require an existing site admin — never create one here.
         admin = User.objects.filter(is_site_admin=True).first()
@@ -551,6 +610,54 @@ class Command(BaseCommand):
         self.stdout.write("Building Financial Risk Management example...")
         self._build_finance()
         self.stdout.write(self.style.SUCCESS("  Financial Risk Management vault complete."))
+
+        # ==============================================================
+        # VAULT 5 — DoD RFP Response
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("\nSetting up DoD RFP Response vault..."))
+
+        self._vault = Vault.objects.create(
+            name="NGCC Pursuit",
+            slug=self.DOD_VAULT_SLUG,
+            description=(
+                "Next-Gen Command & Control (NGCC) $250M DoD contract pursuit — "
+                "RFP requirements, proposal volumes, compliance matrix, past performance, "
+                "competitive analysis, and color-team gate reviews."
+            ),
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+
+        self._setup_dod_sales_schema(admin)
+
+        self.stdout.write("Building DoD RFP Response example...")
+        self._build_dod_rfp()
+        self.stdout.write(self.style.SUCCESS("  DoD RFP Response vault complete."))
+
+        # ==============================================================
+        # VAULT 6 — Enterprise Software Deal
+        # ==============================================================
+        self.stdout.write(self.style.MIGRATE_HEADING("\nSetting up Enterprise Software Deal vault..."))
+
+        self._vault = Vault.objects.create(
+            name="Meridian Analytics Deal",
+            slug=self.ENTERPRISE_VAULT_SLUG,
+            description=(
+                "Meridian Analytics $2.4M ARR enterprise deal with Global Trust Bank — "
+                "customer requirements, solution mapping, POC scenarios, security "
+                "questionnaire, stakeholder management, and competitive positioning."
+            ),
+            created_by=admin,
+        )
+        VaultMembership.objects.create(vault=self._vault, user=admin, role="admin")
+        VaultMembership.objects.create(vault=self._vault, user=self._author, role="editor")
+
+        self._setup_enterprise_sales_schema(admin)
+
+        self.stdout.write("Building Enterprise Software Deal example...")
+        self._build_enterprise_deal()
+        self.stdout.write(self.style.SUCCESS("  Enterprise Software Deal vault complete."))
 
         # ------------------------------------------------------------------
         # Summary
@@ -6360,6 +6467,2585 @@ class Command(BaseCommand):
                 {
                     "label": "Verifying Test Cases",
                     "relation_name": "verifies",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+            ],
+        )
+
+    # ------------------------------------------------------------------
+    # DoD RFP Sales vault schema
+    # ------------------------------------------------------------------
+
+    def _setup_dod_sales_schema(self, admin):
+        """
+        Create item types, custom fields, custom relation types, and
+        document templates for the DoD RFP Sales vault.  Populates
+        ``self._types`` and ``self._relations``.
+        """
+        # Built-in relation types already created by Vault.save()
+        self._relations = {r.name: r for r in RelationType.objects.filter(vault=self._vault)}
+
+        # Ensure is_composed_of has no source type constraint
+        rt = self._relations["is_composed_of"]
+        rt.source_item_type = None
+        rt.target_item_type = None
+        rt.save(update_fields=["source_item_type", "target_item_type"])
+
+        # -- Item types ---------------------------------------------------
+        item_types = [
+            ("Opportunity", "opportunity", "A DoD contract opportunity or pursuit.", "target"),
+            ("RFP Requirement", "rfp-requirement", "A requirement extracted from the Request for Proposal.", "file-text"),
+            ("Proposal Section", "proposal-section", "A section or volume of the proposal response.", "book-open"),
+            ("Compliance Response", "compliance-response", "A response demonstrating compliance with an RFP requirement.", "check-square"),
+            ("Win Theme", "win-theme", "A discriminating theme that differentiates our proposal.", "flag"),
+            ("Competitor", "competitor", "A known competitor for this opportunity.", "swords"),
+            ("Past Performance", "past-performance", "A past performance citation demonstrating relevant experience.", "award"),
+            ("Pricing Element", "pricing-element", "A Contract Line Item Number (CLIN) or pricing component.", "dollar-sign"),
+            ("Risk", "risk", "A risk to the pursuit or proposal.", "alert-triangle"),
+            ("Action Item", "action-item", "A trackable action item for the capture or proposal team.", "circle-check"),
+            ("Gate Review", "gate-review", "A formal colour-team review gate.", "door-open"),
+            ("Question", "question", "A question submitted to the contracting officer.", "help-circle"),
+            ("Demo Scenario", "demo-scenario", "A demonstration scenario for oral presentations or tech demos.", "presentation"),
+            ("Information", "information", "A textual section within a document, such as Purpose, Scope, or Definitions.", "text"),
+        ]
+        self._types = {}
+        for name, slug, desc, icon in item_types:
+            obj, created = ItemType.objects.get_or_create(
+                vault=self._vault,
+                slug=slug,
+                defaults={"name": name, "description": desc, "icon": icon},
+            )
+            self._types[slug] = obj
+            status = "Created" if created else "Exists"
+            self.stdout.write(f"  {status}: ItemType '{name}'")
+
+        # -- Custom fields ------------------------------------------------
+        custom_fields = [
+            # opportunity
+            ("opportunity", "Contract Value", "contract-value", "text", False, {}),
+            ("opportunity", "NAICS Code", "naics-code", "text", False, {}),
+            ("opportunity", "Set-Aside", "set-aside", "choice", False, {"choices": ["Full & Open", "Small Business", "8(a)", "SDVOSB", "HUBZone"]}),
+            ("opportunity", "Due Date", "due-date", "date", False, {}),
+            ("opportunity", "Contracting Office", "contracting-office", "text", False, {}),
+            # rfp-requirement
+            ("rfp-requirement", "Section Reference", "section-reference", "text", False, {}),
+            ("rfp-requirement", "Priority", "priority", "choice", False, {"choices": ["Mandatory", "Desirable", "Optional"]}),
+            # proposal-section
+            ("proposal-section", "Volume", "volume", "choice", False, {"choices": ["Technical", "Management", "Past Performance", "Cost-Price", "Executive Summary"]}),
+            ("proposal-section", "Page Limit", "page-limit", "text", False, {}),
+            ("proposal-section", "Author", "author", "text", False, {}),
+            ("proposal-section", "Status", "status", "choice", False, {"choices": ["Not Started", "Draft", "Review", "Final"]}),
+            # compliance-response
+            ("compliance-response", "Compliance Level", "compliance-level", "choice", False, {"choices": ["Full", "Partial", "Non-Compliant"]}),
+            ("compliance-response", "Explanation", "explanation", "text", False, {}),
+            # win-theme
+            ("win-theme", "Theme Category", "theme-category", "choice", False, {"choices": ["Technical", "Management", "Past Performance", "Cost", "Risk"]}),
+            # competitor
+            ("competitor", "Strength", "strength", "text", False, {}),
+            ("competitor", "Weakness", "weakness", "text", False, {}),
+            ("competitor", "Win Probability", "win-probability", "choice", False, {"choices": ["Low", "Medium", "High"]}),
+            # past-performance
+            ("past-performance", "Contract Number", "contract-number", "text", False, {}),
+            ("past-performance", "Agency", "agency", "text", False, {}),
+            ("past-performance", "Contract Value", "contract-value", "text", False, {}),
+            ("past-performance", "Period of Performance", "period-of-performance", "text", False, {}),
+            ("past-performance", "CPARS Rating", "cpars-rating", "choice", False, {"choices": ["Exceptional", "Very Good", "Satisfactory", "Marginal", "Unsatisfactory"]}),
+            # pricing-element
+            ("pricing-element", "CLIN Number", "clin-number", "text", False, {}),
+            ("pricing-element", "CLIN Type", "clin-type", "choice", False, {"choices": ["FFP", "T&M", "CPFF", "CPIF", "IDIQ"]}),
+            ("pricing-element", "Value", "value", "text", False, {}),
+            # risk
+            ("risk", "Severity", "severity", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
+            ("risk", "Likelihood", "likelihood", "choice", False, {"choices": ["Low", "Medium", "High"]}),
+            ("risk", "Risk Area", "risk-area", "choice", False, {"choices": ["Technical", "Schedule", "Cost", "Competitive", "Compliance"]}),
+            # action-item
+            ("action-item", "Owner", "owner", "text", False, {}),
+            ("action-item", "Due Date", "due-date", "date", False, {}),
+            ("action-item", "Status", "status", "choice", False, {"choices": ["Open", "In Progress", "Complete", "Blocked"]}),
+            # gate-review
+            ("gate-review", "Review Type", "review-type", "choice", False, {"choices": ["Pink Team", "Red Team", "Gold Team", "Final Review"]}),
+            ("gate-review", "Review Date", "review-date", "date", False, {}),
+            ("gate-review", "Outcome", "outcome", "choice", False, {"choices": ["Pass", "Pass with Comments", "Major Rewrite", "Not Conducted"]}),
+            # question
+            ("question", "Submitted Date", "submitted-date", "date", False, {}),
+            ("question", "Response Status", "response-status", "choice", False, {"choices": ["Draft", "Submitted", "Answered", "Withdrawn"]}),
+            # demo-scenario
+            ("demo-scenario", "Duration", "duration", "text", False, {}),
+            ("demo-scenario", "Status", "status", "choice", False, {"choices": ["Planned", "Rehearsed", "Ready"]}),
+        ]
+        for type_slug, name, slug, kind, required, options in custom_fields:
+            item_type = self._types[type_slug]
+            _, created = CustomFieldDefinition.objects.get_or_create(
+                item_type=item_type,
+                slug=slug,
+                defaults={
+                    "name": name,
+                    "field_kind": kind,
+                    "is_required": required,
+                    "options": options,
+                },
+            )
+            status = "Created" if created else "Exists"
+            self.stdout.write(f"  {status}: CustomField '{type_slug}.{name}'")
+
+        # -- Custom relation types ----------------------------------------
+        custom_rels = [
+            {
+                "kind": "trace",
+                "name": "responds_to",
+                "forward_label": "responds to",
+                "reverse_label": "is responded to by",
+                "description": "A proposal section responds to an RFP requirement.",
+                "source_item_type": self._types["proposal-section"],
+                "target_item_type": self._types["rfp-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "evidenced_by",
+                "forward_label": "is evidenced by",
+                "reverse_label": "provides evidence for",
+                "description": "A compliance response is evidenced by a past performance citation.",
+                "source_item_type": self._types["compliance-response"],
+                "target_item_type": self._types["past-performance"],
+            },
+            {
+                "kind": "trace",
+                "name": "demonstrates",
+                "forward_label": "demonstrates",
+                "reverse_label": "is demonstrated by",
+                "description": "A demo scenario demonstrates an RFP requirement.",
+                "source_item_type": self._types["demo-scenario"],
+                "target_item_type": self._types["rfp-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "counters",
+                "forward_label": "counters",
+                "reverse_label": "is countered by",
+                "description": "A win theme counters a competitor's position.",
+                "source_item_type": self._types["win-theme"],
+                "target_item_type": self._types["competitor"],
+            },
+            {
+                "kind": "trace",
+                "name": "prices",
+                "forward_label": "prices",
+                "reverse_label": "is priced by",
+                "description": "A pricing element prices an RFP requirement.",
+                "source_item_type": self._types["pricing-element"],
+                "target_item_type": self._types["rfp-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "mitigates",
+                "forward_label": "mitigates",
+                "reverse_label": "is mitigated by",
+                "description": "An action or control mitigates a risk.",
+                "source_item_type": None,
+                "target_item_type": None,
+            },
+            {
+                "kind": "trace",
+                "name": "clarifies",
+                "forward_label": "clarifies",
+                "reverse_label": "is clarified by",
+                "description": "A question clarifies an RFP requirement.",
+                "source_item_type": self._types["question"],
+                "target_item_type": self._types["rfp-requirement"],
+            },
+        ]
+        for cr in custom_rels:
+            obj, created = RelationType.objects.update_or_create(
+                vault=self._vault,
+                name=cr["name"],
+                defaults={
+                    "kind": cr["kind"],
+                    "forward_label": cr["forward_label"],
+                    "reverse_label": cr["reverse_label"],
+                    "description": cr["description"],
+                    "source_item_type": cr["source_item_type"],
+                    "target_item_type": cr["target_item_type"],
+                    "is_builtin": False,
+                },
+            )
+            self._relations[cr["name"]] = obj
+            tag = "Created" if created else "Updated"
+            self.stdout.write(f"  {tag} custom relation type: {cr['name']}")
+
+        # -- Document templates -------------------------------------------
+        self.stdout.write("Seeding document templates...")
+        doc_templates = [
+            (
+                "rfp-requirement",
+                "{{heading}} {{title}}\n\n"
+                "| Field | Value |\n"
+                "|---|---|\n"
+                "| **Section Reference** | {{section-reference}} |\n"
+                "| **Priority** | {{priority}} |\n"
+                "| **Status** | {{status}} |\n"
+                "| **Version** | {{current_version}} |\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "compliance-response",
+                "{{heading}} {{title}}\n\n"
+                "**Compliance Level:** {{compliance-level}}\n\n"
+                "**Explanation:** {{explanation}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "risk",
+                "{{heading}} {{title}}\n\n"
+                "**Severity:** {{severity}} | **Likelihood:** {{likelihood}} | "
+                "**Risk Area:** {{risk-area}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "gate-review",
+                "{{heading}} {{title}}\n\n"
+                "**Review Type:** {{review-type}} | **Outcome:** {{outcome}} | "
+                "**Review Date:** {{review-date}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "information",
+                "{{heading}} {{title}}\n\n{{description}}\n",
+            ),
+        ]
+        for type_slug, template_str in doc_templates:
+            item_type = self._types[type_slug]
+            DocumentTemplate.objects.update_or_create(
+                item_type=item_type,
+                defaults={"template": template_str, "updated_by": self._author},
+            )
+            self.stdout.write(f"  Seeded: DocumentTemplate for '{type_slug}'")
+
+    # ------------------------------------------------------------------
+    # DoD RFP Sales example data
+    # ------------------------------------------------------------------
+
+    def _build_dod_rfp(self):
+        # ==============================================================
+        # OPPORTUNITY
+        # ==============================================================
+        opp = self._item(
+            "opportunity",
+            "NGCC Pursuit \u2014 Next-Gen Command & Control",
+            "Pursuit of the $250M NGCC contract for the U.S. Joint Force "
+            "Command. The programme delivers a next-generation command and "
+            "control system integrating joint mission planning, common "
+            "operating picture, multi-domain sensor fusion, and tactical "
+            "communications across all service branches. Full & Open "
+            "competition under FAR 15; best-value trade-off evaluation.",
+            **{
+                "contract-value": "$250,000,000",
+                "naics-code": "541512",
+                "set-aside": "Full & Open",
+                "contracting-office": "PEO C3T, Aberdeen Proving Ground",
+            },
+        )
+
+        # ==============================================================
+        # RFP REQUIREMENTS (18)
+        # ==============================================================
+        rfp_001 = self._item(
+            "rfp-requirement",
+            "RFP-001: Joint Mission Planning",
+            "The system shall provide collaborative joint mission planning "
+            "capability supporting course-of-action development, wargaming, "
+            "and order generation across all echelons from Division to Squad.",
+            **{"section-reference": "SOW 3.1.1", "priority": "Mandatory"},
+        )
+        rfp_002 = self._item(
+            "rfp-requirement",
+            "RFP-002: Common Operating Picture Display",
+            "The system shall render a common operating picture aggregating "
+            "blue-force tracks, hostile tracks, and environmental overlays "
+            "with sub-second refresh rates and MIL-STD-2525D symbology.",
+            **{"section-reference": "SOW 3.1.2", "priority": "Mandatory"},
+        )
+        rfp_003 = self._item(
+            "rfp-requirement",
+            "RFP-003: Multi-Domain Sensor Fusion",
+            "The system shall fuse sensor data from space, air, land, sea, "
+            "and cyber domains using a publish-subscribe architecture with "
+            "automated correlation and track management.",
+            **{"section-reference": "SOW 3.1.3", "priority": "Mandatory"},
+        )
+        rfp_004 = self._item(
+            "rfp-requirement",
+            "RFP-004: Tactical Communications Gateway",
+            "The system shall provide a tactical communications gateway "
+            "supporting SATCOM, HF, VHF/UHF, and wideband data links with "
+            "automatic link management and bandwidth optimisation.",
+            **{"section-reference": "SOW 3.2.1", "priority": "Mandatory"},
+        )
+        rfp_005 = self._item(
+            "rfp-requirement",
+            "RFP-005: Link 16/JREAP Integration",
+            "The system shall interface with Link 16 tactical data link "
+            "via MIDS-JTRS terminals and support JREAP-C encapsulation "
+            "for beyond-line-of-sight relay over IP networks.",
+            **{"section-reference": "SOW 3.2.2", "priority": "Mandatory"},
+        )
+        rfp_006 = self._item(
+            "rfp-requirement",
+            "RFP-006: Coalition Partner Data Sharing",
+            "The system shall support coalition data sharing with Five Eyes "
+            "and NATO partners via cross-domain solutions with configurable "
+            "release policies and automated downgrade guards.",
+            **{"section-reference": "SOW 3.2.3", "priority": "Desirable"},
+        )
+        rfp_007 = self._item(
+            "rfp-requirement",
+            "RFP-007: RMF Authorization (NIST 800-53 Rev 5)",
+            "The contractor shall achieve Risk Management Framework "
+            "authorization to operate (ATO) at Impact Level 5, implementing "
+            "all applicable NIST SP 800-53 Rev 5 security controls.",
+            **{"section-reference": "SOW 3.3.1", "priority": "Mandatory"},
+        )
+        rfp_008 = self._item(
+            "rfp-requirement",
+            "RFP-008: Zero Trust Architecture Implementation",
+            "The system shall implement a zero-trust security architecture "
+            "per DoD Zero Trust Reference Architecture v2.0, with continuous "
+            "authentication, micro-segmentation, and least-privilege access.",
+            **{"section-reference": "SOW 3.3.2", "priority": "Mandatory"},
+        )
+        rfp_009 = self._item(
+            "rfp-requirement",
+            "RFP-009: STIG Compliance & Continuous Monitoring",
+            "All system components shall comply with applicable DISA STIGs "
+            "and support continuous monitoring via ACAS vulnerability scanning "
+            "and HBSS endpoint protection integration.",
+            **{"section-reference": "SOW 3.3.3", "priority": "Mandatory"},
+        )
+        rfp_010 = self._item(
+            "rfp-requirement",
+            "RFP-010: Role-Based Access with Identity Federation",
+            "The system shall implement role-based access control federated "
+            "with DoD Identity, Credential, and Access Management (ICAM) "
+            "services, supporting CAC/PIV authentication and SAML 2.0.",
+            **{"section-reference": "SOW 3.3.4", "priority": "Desirable"},
+        )
+        rfp_011 = self._item(
+            "rfp-requirement",
+            "RFP-011: System Availability 99.99% Uptime",
+            "The system shall achieve 99.99% operational availability "
+            "measured across a rolling 12-month period, with automatic "
+            "failover completing within 30 seconds of fault detection.",
+            **{"section-reference": "SOW 3.4.1", "priority": "Mandatory"},
+        )
+        rfp_012 = self._item(
+            "rfp-requirement",
+            "RFP-012: Disconnected/Degraded/Intermittent Operations",
+            "The system shall maintain mission-critical functionality during "
+            "disconnected, degraded, and intermittent (D-DIL) communications "
+            "using local caching, store-and-forward, and mesh networking.",
+            **{"section-reference": "SOW 3.4.2", "priority": "Mandatory"},
+        )
+        rfp_013 = self._item(
+            "rfp-requirement",
+            "RFP-013: Scalability to 10,000 Concurrent Users",
+            "The system shall support a minimum of 10,000 concurrent users "
+            "across geographically distributed sites with no degradation in "
+            "response time beyond the thresholds specified in CDRL A001.",
+            **{"section-reference": "SOW 3.4.3", "priority": "Desirable"},
+        )
+        rfp_014 = self._item(
+            "rfp-requirement",
+            "RFP-014: CDRL A001 \u2014 System Design Document",
+            "The contractor shall deliver a System Design Document per "
+            "DI-MISC-81183B describing the system architecture, interface "
+            "definitions, database design, and security architecture.",
+            **{"section-reference": "DI-MISC-81183B", "priority": "Mandatory"},
+        )
+        rfp_015 = self._item(
+            "rfp-requirement",
+            "RFP-015: CDRL A002 \u2014 Software Test Report",
+            "The contractor shall deliver a Software Test Report per "
+            "DI-IPSC-81439A documenting test procedures, results, deficiency "
+            "reports, and regression test outcomes for each build.",
+            **{"section-reference": "DI-IPSC-81439A", "priority": "Mandatory"},
+        )
+        rfp_016 = self._item(
+            "rfp-requirement",
+            "RFP-016: CDRL A003 \u2014 Cybersecurity Assessment Report",
+            "The contractor shall deliver a Cybersecurity Assessment Report "
+            "per DI-MGMT-82163 including vulnerability scan results, STIG "
+            "compliance status, and plan of action and milestones (POA&M).",
+            **{"section-reference": "DI-MGMT-82163", "priority": "Mandatory"},
+        )
+        rfp_017 = self._item(
+            "rfp-requirement",
+            "RFP-017: Training Program \u2014 Operator & Administrator",
+            "The contractor shall develop and deliver a training programme "
+            "for system operators and administrators, including instructor-led "
+            "training, computer-based training, and job aids.",
+            **{"section-reference": "SOW 3.5.1", "priority": "Mandatory"},
+        )
+        rfp_018 = self._item(
+            "rfp-requirement",
+            "RFP-018: Technology Refresh Plan",
+            "The contractor shall deliver a technology refresh plan addressing "
+            "hardware obsolescence, software currency, and COTS upgrade "
+            "cycles over the 10-year programme lifecycle.",
+            **{"section-reference": "SOW 3.6.1", "priority": "Desirable"},
+        )
+
+        # ==============================================================
+        # PROPOSAL VOLUMES & SECTIONS
+        # ==============================================================
+        vol_i = self._item(
+            "proposal-section",
+            "Vol I \u2014 Technical Approach",
+            "Technical volume describing the system architecture, design "
+            "approach, and technical solution for the NGCC programme.",
+            **{"volume": "Technical", "page-limit": "200", "author": "Chief Engineer", "status": "Draft"},
+        )
+        vol_ii = self._item(
+            "proposal-section",
+            "Vol II \u2014 Management Approach",
+            "Management volume describing programme management, risk "
+            "management, staffing, and integrated master schedule.",
+            **{"volume": "Management", "page-limit": "100", "author": "Program Manager", "status": "Draft"},
+        )
+        vol_iii = self._item(
+            "proposal-section",
+            "Vol III \u2014 Past Performance",
+            "Past performance volume presenting relevant contract citations "
+            "demonstrating capability and experience.",
+            **{"volume": "Past Performance", "page-limit": "50", "author": "BD Manager", "status": "Review"},
+        )
+        vol_iv = self._item(
+            "proposal-section",
+            "Vol IV \u2014 Cost/Price",
+            "Cost/price volume with basis of estimate, CLIN pricing, and "
+            "supporting cost data per DFARS 252.215-7010.",
+            **{"volume": "Cost-Price", "page-limit": "No Limit", "author": "Pricing Manager", "status": "Not Started"},
+        )
+        self._compose(opp, vol_i, vol_ii, vol_iii, vol_iv)
+
+        # -- Vol I sub-sections -------------------------------------------
+        sec_1_1 = self._item(
+            "proposal-section",
+            "1.1 System Architecture Overview",
+            "Describes the overall system architecture including service-oriented "
+            "design, microservices decomposition, containerised deployment on "
+            "IL-5 cloud, and the integration backbone.",
+            **{"volume": "Technical", "author": "Solution Architect", "status": "Draft"},
+        )
+        sec_1_2 = self._item(
+            "proposal-section",
+            "1.2 Mission Planning & COA Development",
+            "Details the joint mission planning capability including course-of-action "
+            "development, collaborative planning tools, wargaming engine, and "
+            "automated order generation.",
+            **{"volume": "Technical", "author": "Mission Planning Lead", "status": "Draft"},
+        )
+        sec_1_3 = self._item(
+            "proposal-section",
+            "1.3 Common Operating Picture & Sensor Fusion",
+            "Describes the COP rendering engine, multi-domain sensor fusion "
+            "algorithms, track correlation and management, and MIL-STD-2525D "
+            "symbology implementation.",
+            **{"volume": "Technical", "author": "COP Lead Engineer", "status": "Draft"},
+        )
+        sec_1_4 = self._item(
+            "proposal-section",
+            "1.4 Communications & Interoperability",
+            "Covers the tactical communications gateway, Link 16/JREAP "
+            "integration, SATCOM interfaces, and coalition data sharing "
+            "with cross-domain solutions.",
+            **{"volume": "Technical", "author": "Comms Lead", "status": "Not Started"},
+        )
+        sec_1_5 = self._item(
+            "proposal-section",
+            "1.5 Cybersecurity & RMF Compliance",
+            "Details the zero-trust architecture, RMF authorization approach, "
+            "STIG compliance strategy, continuous monitoring, and identity "
+            "federation with DoD ICAM.",
+            **{"volume": "Technical", "author": "Cyber Lead", "status": "Draft"},
+        )
+        sec_1_6 = self._item(
+            "proposal-section",
+            "1.6 CDRL Management Approach",
+            "Describes the approach for delivering all CDRLs including the "
+            "System Design Document, Software Test Report, and Cybersecurity "
+            "Assessment Report per the specified DIDs.",
+            **{"volume": "Technical", "author": "Systems Engineer", "status": "Not Started"},
+        )
+        self._compose(vol_i, sec_1_1, sec_1_2, sec_1_3, sec_1_4, sec_1_5, sec_1_6)
+
+        # -- Vol II sub-sections ------------------------------------------
+        sec_2_1 = self._item(
+            "proposal-section",
+            "2.1 Program Management Approach",
+            "Describes the programme management framework including EVM, "
+            "agile/hybrid methodology, governance structure, and customer "
+            "reporting cadence.",
+            **{"volume": "Management", "author": "Program Manager", "status": "Draft"},
+        )
+        sec_2_2 = self._item(
+            "proposal-section",
+            "2.2 Risk Management",
+            "Details the risk management process including identification, "
+            "assessment, mitigation planning, tracking, and reporting aligned "
+            "with DoD Risk, Issue, and Opportunity management guidance.",
+            **{"volume": "Management", "author": "Risk Manager", "status": "Draft"},
+        )
+        sec_2_3 = self._item(
+            "proposal-section",
+            "2.3 Staffing & Key Personnel",
+            "Presents the organisational structure, key personnel qualifications, "
+            "and staffing plan for the NGCC programme across all phases.",
+            **{"volume": "Management", "author": "HR Manager", "status": "Not Started"},
+        )
+        sec_2_4 = self._item(
+            "proposal-section",
+            "2.4 Integrated Master Schedule",
+            "Provides the integrated master schedule showing all programme "
+            "milestones, deliverables, reviews, and critical path analysis "
+            "across the system development lifecycle.",
+            **{"volume": "Management", "author": "Scheduler", "status": "Not Started"},
+        )
+        self._compose(vol_ii, sec_2_1, sec_2_2, sec_2_3, sec_2_4)
+
+        # ==============================================================
+        # COMPLIANCE RESPONSES (18)
+        # ==============================================================
+        cr_001 = self._item(
+            "compliance-response",
+            "CR-001: Joint Mission Planning Compliance",
+            "Full compliance. Our proven JADC2 mission planning engine supports "
+            "collaborative COA development across all echelons with automated "
+            "order generation and wargaming capability.",
+            **{"compliance-level": "Full", "explanation": "Demonstrated on JADC2 Integration contract with identical mission planning requirements."},
+        )
+        cr_002 = self._item(
+            "compliance-response",
+            "CR-002: Common Operating Picture Compliance",
+            "Full compliance. Our COP engine renders MIL-STD-2525D symbology "
+            "with sub-second refresh rates and supports configurable map "
+            "layers, overlays, and track filters.",
+            **{"compliance-level": "Full", "explanation": "COP engine delivered on GCCS-J Modernization with 200ms average refresh rate."},
+        )
+        cr_003 = self._item(
+            "compliance-response",
+            "CR-003: Multi-Domain Sensor Fusion Compliance",
+            "Full compliance. Our sensor fusion engine uses a publish-subscribe "
+            "architecture with automated track correlation across space, air, "
+            "land, sea, and cyber domains.",
+            **{"compliance-level": "Full", "explanation": "Multi-domain fusion demonstrated on JADC2 programme with 15 sensor types."},
+        )
+        cr_004 = self._item(
+            "compliance-response",
+            "CR-004: Tactical Communications Gateway Compliance",
+            "Full compliance. Our tactical gateway supports SATCOM, HF, "
+            "VHF/UHF, and wideband links with automatic link management "
+            "and dynamic bandwidth allocation.",
+            **{"compliance-level": "Full", "explanation": "Gateway fielded on AFATDS programme supporting 8 simultaneous link types."},
+        )
+        cr_005 = self._item(
+            "compliance-response",
+            "CR-005: Link 16/JREAP Integration Compliance",
+            "Full compliance. Our Link 16 interface supports MIDS-JTRS "
+            "terminals and JREAP-C encapsulation tested in joint exercises.",
+            **{"compliance-level": "Full", "explanation": "Link 16 integration verified during Talisman Sabre 2023 joint exercise."},
+        )
+        cr_006 = self._item(
+            "compliance-response",
+            "CR-006: Coalition Data Sharing Compliance",
+            "Full compliance. Our cross-domain solution supports Five Eyes "
+            "and NATO data sharing with configurable release policies.",
+            **{"compliance-level": "Full", "explanation": "Coalition data sharing delivered on NATO ACCS Interface Development contract."},
+        )
+        cr_007 = self._item(
+            "compliance-response",
+            "CR-007: RMF Authorization Compliance",
+            "Full compliance. Our RMF team has achieved 12 ATOs in the past "
+            "five years including IL-5 and IL-6 environments.",
+            **{"compliance-level": "Full", "explanation": "ATO achieved on GCCS-J Modernization within 9 months of RMF initiation."},
+        )
+        cr_008 = self._item(
+            "compliance-response",
+            "CR-008: Zero Trust Architecture Compliance",
+            "Full compliance. Our zero-trust implementation follows DoD ZTA "
+            "Reference Architecture v2.0 with continuous authentication and "
+            "micro-segmentation.",
+            **{"compliance-level": "Full", "explanation": "Zero-trust architecture piloted on JADC2 programme per DoD CIO guidance."},
+        )
+        cr_009 = self._item(
+            "compliance-response",
+            "CR-009: STIG Compliance Compliance",
+            "Full compliance. All components are STIG-hardened with automated "
+            "compliance scanning via ACAS and HBSS integration.",
+            **{"compliance-level": "Full", "explanation": "100% STIG compliance maintained on GCCS-J with zero Category I findings."},
+        )
+        cr_010 = self._item(
+            "compliance-response",
+            "CR-010: Identity Federation Compliance",
+            "Full compliance. RBAC federated with DoD ICAM supporting "
+            "CAC/PIV and SAML 2.0 single sign-on.",
+            **{"compliance-level": "Full", "explanation": "ICAM integration delivered on JADC2 with 5,000+ federated users."},
+        )
+        cr_011 = self._item(
+            "compliance-response",
+            "CR-011: System Availability Compliance",
+            "Full compliance. Our architecture achieves 99.99% availability "
+            "through active-active clustering with 15-second failover.",
+            **{"compliance-level": "Full", "explanation": "99.995% availability demonstrated on GCCS-J over 24-month measurement period."},
+        )
+        cr_012 = self._item(
+            "compliance-response",
+            "CR-012: D-DIL Operations Compliance",
+            "Full compliance. Store-and-forward and mesh networking capabilities "
+            "maintain mission-critical functions during D-DIL conditions.",
+            **{"compliance-level": "Full", "explanation": "D-DIL operations tested during AFATDS field exercise with 72-hour disconnected operation."},
+        )
+        cr_013 = self._item(
+            "compliance-response",
+            "CR-013: Scalability Compliance",
+            "Partial compliance. Architecture supports 10,000 users but "
+            "requires phased deployment with horizontal scaling. Full "
+            "compliance achieved by IOC+6 months.",
+            **{"compliance-level": "Partial", "explanation": "Current architecture tested to 7,500 concurrent users; horizontal scaling upgrade planned for Phase 2."},
+        )
+        cr_014 = self._item(
+            "compliance-response",
+            "CR-014: System Design Document Compliance",
+            "Full compliance. SDD will be delivered per DI-MISC-81183B "
+            "format with architecture views, interface specifications, and "
+            "database design.",
+            **{"compliance-level": "Full", "explanation": "SDD template and process proven on 4 prior DoD programmes."},
+        )
+        cr_015 = self._item(
+            "compliance-response",
+            "CR-015: Software Test Report Compliance",
+            "Full compliance. STR will be delivered per DI-IPSC-81439A "
+            "with automated test execution reports from CI/CD pipeline.",
+            **{"compliance-level": "Full", "explanation": "Automated STR generation from DevSecOps pipeline demonstrated on JADC2."},
+        )
+        cr_016 = self._item(
+            "compliance-response",
+            "CR-016: Cybersecurity Assessment Report Compliance",
+            "Full compliance. CAR will be delivered per DI-MGMT-82163 "
+            "including automated vulnerability scan results and POA&M.",
+            **{"compliance-level": "Full", "explanation": "CAR process automated via continuous monitoring pipeline on GCCS-J."},
+        )
+        cr_017 = self._item(
+            "compliance-response",
+            "CR-017: Training Program Compliance",
+            "Partial compliance. ILT and CBT will be provided; VR-based "
+            "training module requires additional development time beyond "
+            "the baseline schedule.",
+            **{"compliance-level": "Partial", "explanation": "ILT/CBT training programme delivered on AFATDS; VR module is new development."},
+        )
+        cr_018 = self._item(
+            "compliance-response",
+            "CR-018: Technology Refresh Plan Compliance",
+            "Full compliance. Technology refresh plan will address hardware "
+            "obsolescence, COTS currency, and open-standards migration over "
+            "the 10-year lifecycle.",
+            **{"compliance-level": "Full", "explanation": "Tech refresh methodology proven across 5 prior long-duration DoD programmes."},
+        )
+        self._compose(
+            opp, cr_001, cr_002, cr_003, cr_004, cr_005, cr_006,
+            cr_007, cr_008, cr_009, cr_010, cr_011, cr_012,
+            cr_013, cr_014, cr_015, cr_016, cr_017, cr_018,
+        )
+
+        # ==============================================================
+        # PAST PERFORMANCE CITATIONS (4)
+        # ==============================================================
+        pp_jadc2 = self._item(
+            "past-performance",
+            "JADC2 Integration \u2014 U.S. Army PEO C3T",
+            "Joint All-Domain Command and Control integration programme "
+            "delivering mission planning, COP, and sensor fusion capabilities "
+            "to the U.S. Army. Achieved full operational capability on schedule "
+            "with zero critical deficiencies at IOT&E.",
+            **{
+                "contract-number": "W56KGZ-19-C-0042",
+                "agency": "U.S. Army PEO C3T",
+                "contract-value": "$89,000,000",
+                "period-of-performance": "2019\u20132024",
+                "cpars-rating": "Exceptional",
+            },
+        )
+        pp_gccs = self._item(
+            "past-performance",
+            "GCCS-J Modernization \u2014 DISA",
+            "Modernization of the Global Command and Control System \u2014 Joint, "
+            "migrating from legacy monolithic architecture to microservices-based "
+            "cloud deployment with zero-trust security architecture.",
+            **{
+                "contract-number": "HC1028-17-D-0003",
+                "agency": "DISA",
+                "contract-value": "$142,000,000",
+                "period-of-performance": "2017\u20132023",
+                "cpars-rating": "Very Good",
+            },
+        )
+        pp_afatds = self._item(
+            "past-performance",
+            "AFATDS Fire Control Upgrade \u2014 U.S. Army PEO M&S",
+            "Upgrade of the Advanced Field Artillery Tactical Data System "
+            "adding multi-domain fire control, Link 16 integration, and "
+            "tactical communications gateway with D-DIL operations capability.",
+            **{
+                "contract-number": "W58RGZ-20-C-0118",
+                "agency": "U.S. Army PEO M&S",
+                "contract-value": "$67,000,000",
+                "period-of-performance": "2020\u20132025",
+                "cpars-rating": "Exceptional",
+            },
+        )
+        pp_nato = self._item(
+            "past-performance",
+            "NATO ACCS Interface Development \u2014 NATO C3 Agency",
+            "Development of the interface layer between the NATO Air Command "
+            "and Control System and national C2 systems, enabling Five Eyes "
+            "and NATO coalition data sharing with cross-domain guard.",
+            **{
+                "contract-number": "NATO-IFB-CO-15671-ACCS",
+                "agency": "NATO C3 Agency",
+                "contract-value": "$34,000,000",
+                "period-of-performance": "2021\u20132024",
+                "cpars-rating": "Very Good",
+            },
+        )
+        self._compose(vol_iii, pp_jadc2, pp_gccs, pp_afatds, pp_nato)
+
+        # ==============================================================
+        # PRICING ELEMENTS (6 CLINs)
+        # ==============================================================
+        clin_0001 = self._item(
+            "pricing-element",
+            "CLIN 0001: System Design & Development",
+            "Firm-fixed-price effort covering system architecture design, "
+            "software development, hardware integration, and initial system "
+            "build through CDR.",
+            **{"clin-number": "0001", "clin-type": "FFP", "value": "$78,000,000"},
+        )
+        clin_0002 = self._item(
+            "pricing-element",
+            "CLIN 0002: System Integration & Test",
+            "Firm-fixed-price effort for system integration, developmental "
+            "testing, operational testing support, and cybersecurity "
+            "assessment through ATO.",
+            **{"clin-number": "0002", "clin-type": "FFP", "value": "$52,000,000"},
+        )
+        clin_0003 = self._item(
+            "pricing-element",
+            "CLIN 0003: Cybersecurity Assessment & RMF Package",
+            "Firm-fixed-price effort for RMF body of evidence development, "
+            "security control assessment, penetration testing, and ATO "
+            "package preparation.",
+            **{"clin-number": "0003", "clin-type": "FFP", "value": "$18,000,000"},
+        )
+        clin_0004 = self._item(
+            "pricing-element",
+            "CLIN 0004: Training & Deployment",
+            "Time-and-materials effort for operator and administrator "
+            "training development, instructor-led training delivery, and "
+            "site deployment across CONUS and OCONUS locations.",
+            **{"clin-number": "0004", "clin-type": "T&M", "value": "$24,000,000"},
+        )
+        clin_0005 = self._item(
+            "pricing-element",
+            "CLIN 0005: Sustainment & Operations Support",
+            "Cost-plus-fixed-fee effort for 5-year sustainment including "
+            "help desk, software maintenance, hardware refresh, and "
+            "operations support at government facilities.",
+            **{"clin-number": "0005", "clin-type": "CPFF", "value": "$65,000,000"},
+        )
+        clin_0006 = self._item(
+            "pricing-element",
+            "CLIN 0006: Data Rights & Technical Data Packages",
+            "Firm-fixed-price for delivery of technical data packages, "
+            "unlimited government purpose rights for all developed software, "
+            "and COTS license transfers.",
+            **{"clin-number": "0006", "clin-type": "FFP", "value": "$13,000,000"},
+        )
+        self._compose(vol_iv, clin_0001, clin_0002, clin_0003, clin_0004, clin_0005, clin_0006)
+
+        # ==============================================================
+        # WIN THEMES (5)
+        # ==============================================================
+        wt_jadc2 = self._item(
+            "win-theme",
+            "Proven JADC2 Integration at Scale",
+            "Our team has delivered the only operational JADC2 integration "
+            "at theatre scale, fusing 15 sensor types across 4 domains with "
+            "proven mission planning and COP capabilities.",
+            **{"theme-category": "Technical"},
+        )
+        wt_zt = self._item(
+            "win-theme",
+            "Zero-Trust Cyber Architecture \u2014 RMF Day-One Ready",
+            "Our zero-trust architecture has achieved ATO in under 9 months "
+            "on two prior programmes, reducing cyber risk and accelerating "
+            "time to fielding.",
+            **{"theme-category": "Technical"},
+        )
+        wt_devsecops = self._item(
+            "win-theme",
+            "Agile DevSecOps with Continuous ATO",
+            "Our DevSecOps pipeline delivers continuous ATO through automated "
+            "security scanning, STIG compliance checking, and vulnerability "
+            "management integrated into every sprint.",
+            **{"theme-category": "Management"},
+        )
+        wt_coalition = self._item(
+            "win-theme",
+            "Coalition Interoperability \u2014 Five Eyes & NATO Proven",
+            "Our NATO ACCS integration provides proven Five Eyes and NATO "
+            "coalition data sharing with cross-domain guard and configurable "
+            "release policies.",
+            **{"theme-category": "Past Performance"},
+        )
+        wt_cost = self._item(
+            "win-theme",
+            "20% Lower Lifecycle Cost via Open Standards",
+            "Our open-standards architecture reduces vendor lock-in and "
+            "enables competitive sustainment, delivering 20% lower total "
+            "cost of ownership over the 10-year programme lifecycle.",
+            **{"theme-category": "Cost"},
+        )
+        self._compose(opp, wt_jadc2, wt_zt, wt_devsecops, wt_coalition, wt_cost)
+
+        # ==============================================================
+        # COMPETITORS (3)
+        # ==============================================================
+        comp_raytheon = self._item(
+            "competitor",
+            "Raytheon \u2014 ELCAN C2 Suite",
+            "Raytheon is the incumbent on the predecessor programme with "
+            "deep customer relationships at PEO C3T. Their ELCAN C2 suite "
+            "is fielded but aging.",
+            **{
+                "strength": "Incumbent on predecessor programme with established customer relationships and fielded baseline.",
+                "weakness": "Legacy monolithic architecture with high technical debt; 18-month ATO timeline on last programme.",
+                "win-probability": "High",
+            },
+        )
+        comp_l3 = self._item(
+            "competitor",
+            "L3Harris \u2014 C4ISR Command Platform",
+            "L3Harris brings strong tactical radio integration from their "
+            "JTRS programme and a modern C4ISR platform with good sensor "
+            "fusion capabilities.",
+            **{
+                "strength": "Strong tactical radio integration from JTRS programme; good sensor fusion capabilities.",
+                "weakness": "Limited coalition interoperability experience; no prior cross-domain solution deployment at scale.",
+                "win-probability": "Medium",
+            },
+        )
+        comp_palantir = self._item(
+            "competitor",
+            "Palantir \u2014 Gotham Defense",
+            "Palantir offers a modern data fabric and AI/ML analytics engine "
+            "with strong data integration capabilities, but limited DoD C2 "
+            "programme-of-record experience.",
+            **{
+                "strength": "Modern data fabric and AI/ML analytics engine with rapid integration capabilities.",
+                "weakness": "No prior DoD C2 programme of record; limited understanding of DoD acquisition process and CDRL requirements.",
+                "win-probability": "Low",
+            },
+        )
+        self._compose(opp, comp_raytheon, comp_l3, comp_palantir)
+
+        # ==============================================================
+        # GATE REVIEWS (3)
+        # ==============================================================
+        gr_pink = self._item(
+            "gate-review",
+            "Pink Team \u2014 Outline Review",
+            "Pink team review of proposal outlines, compliance matrix, "
+            "and win theme assignments. Focus on completeness and "
+            "responsiveness to all RFP requirements.",
+            **{"review-type": "Pink Team", "outcome": "Pass with Comments"},
+        )
+        gr_red = self._item(
+            "gate-review",
+            "Red Team \u2014 Full Draft Review",
+            "Red team review of the full proposal draft by independent "
+            "reviewers simulating the government evaluation team. Scored "
+            "against Section M evaluation criteria.",
+            **{"review-type": "Red Team", "outcome": "Not Conducted"},
+        )
+        gr_gold = self._item(
+            "gate-review",
+            "Gold Team \u2014 Final Review",
+            "Gold team final review of the production-ready proposal "
+            "focusing on compliance, pricing consistency, and executive "
+            "summary quality.",
+            **{"review-type": "Gold Team", "outcome": "Not Conducted"},
+        )
+        self._compose(opp, gr_pink, gr_red, gr_gold)
+
+        # ==============================================================
+        # DEMO SCENARIOS (4)
+        # ==============================================================
+        ds_001 = self._item(
+            "demo-scenario",
+            "DS-001: Joint Mission Planning Workflow",
+            "End-to-end demonstration of joint mission planning including "
+            "situation assessment, COA development with wargaming, collaborative "
+            "planning across echelons, and automated order generation.",
+            **{"duration": "45 minutes", "status": "Rehearsed"},
+        )
+        ds_002 = self._item(
+            "demo-scenario",
+            "DS-002: COP Multi-Sensor Fusion",
+            "Real-time demonstration of common operating picture with multi-domain "
+            "sensor fusion showing track correlation from satellite imagery, "
+            "radar, SIGINT, and ground sensors on a unified display.",
+            **{"duration": "30 minutes", "status": "Planned"},
+        )
+        ds_003 = self._item(
+            "demo-scenario",
+            "DS-003: Degraded Communications Failover",
+            "Demonstration of D-DIL operations capability showing automatic "
+            "failover from SATCOM to mesh networking, store-and-forward "
+            "message handling, and graceful reconnection with data sync.",
+            **{"duration": "30 minutes", "status": "Planned"},
+        )
+        ds_004 = self._item(
+            "demo-scenario",
+            "DS-004: Cyber Incident Response",
+            "Demonstration of zero-trust security response including threat "
+            "detection via continuous monitoring, automatic micro-segmentation "
+            "isolation, and recovery with forensic logging.",
+            **{"duration": "20 minutes", "status": "Planned"},
+        )
+        self._compose(opp, ds_001, ds_002, ds_003, ds_004)
+
+        # ==============================================================
+        # QUESTIONS (3)
+        # ==============================================================
+        q_001 = self._item(
+            "question",
+            "Q-001: JREAP-C vs JREAP-A Profile Requirement",
+            "Request for clarification on whether the SOW 3.2.2 Link 16/JREAP "
+            "requirement mandates JREAP-C only or also requires JREAP-A "
+            "support for legacy system interoperability.",
+            **{"response-status": "Submitted"},
+        )
+        q_002 = self._item(
+            "question",
+            "Q-002: GFE Availability for Link 16 Terminals",
+            "Request for clarification on whether Link 16 MIDS-JTRS terminals "
+            "will be provided as government-furnished equipment or must be "
+            "included in the contractor's cost proposal.",
+            **{"response-status": "Submitted"},
+        )
+        q_003 = self._item(
+            "question",
+            "Q-003: IL-5 vs IL-6 Cloud Hosting Requirement",
+            "Request for clarification on the required impact level for "
+            "cloud hosting. SOW 3.4.1 references IL-5 but the Cybersecurity "
+            "Assessment Report CDRL implies IL-6 for classified data.",
+            **{"response-status": "Draft"},
+        )
+        self._compose(opp, q_001, q_002, q_003)
+
+        # ==============================================================
+        # RISKS (5)
+        # ==============================================================
+        risk_001 = self._item(
+            "risk",
+            "R-001: Competitor Incumbency Advantage",
+            "Raytheon's incumbent status on the predecessor programme gives "
+            "them established customer relationships and deep understanding "
+            "of operational requirements that may bias the evaluation.",
+            **{"severity": "High", "likelihood": "High", "risk-area": "Competitive"},
+        )
+        risk_002 = self._item(
+            "risk",
+            "R-002: RMF Authorization Timeline Risk",
+            "The RMF authorization process may take longer than planned due "
+            "to evolving NIST 800-53 Rev 5 control requirements and limited "
+            "assessor availability at the authorizing official's office.",
+            **{"severity": "High", "likelihood": "Medium", "risk-area": "Schedule"},
+        )
+        risk_003 = self._item(
+            "risk",
+            "R-003: COTS License Cost Escalation",
+            "Key COTS components (database, middleware, monitoring tools) may "
+            "experience licence cost increases during the 10-year programme "
+            "lifecycle, eroding the cost basis of estimate.",
+            **{"severity": "Medium", "likelihood": "Medium", "risk-area": "Cost"},
+        )
+        risk_004 = self._item(
+            "risk",
+            "R-004: Coalition Data-Sharing Policy Delays",
+            "Changes in coalition data-sharing agreements or cross-domain "
+            "solution accreditation policies may delay the coalition "
+            "interoperability capability delivery.",
+            **{"severity": "Medium", "likelihood": "Low", "risk-area": "Technical"},
+        )
+        risk_005 = self._item(
+            "risk",
+            "R-005: Key Personnel Availability",
+            "Critical key personnel identified in the proposal may become "
+            "unavailable due to competing programme demands or attrition "
+            "before contract award.",
+            **{"severity": "Low", "likelihood": "Low", "risk-area": "Schedule"},
+        )
+        self._compose(opp, risk_001, risk_002, risk_003, risk_004, risk_005)
+
+        # ==============================================================
+        # ACTION ITEMS (5)
+        # ==============================================================
+        ai_001 = self._item(
+            "action-item",
+            "AI-001: Complete RMF Body of Evidence for ATO Package",
+            "Compile and review the full RMF body of evidence including "
+            "security control assessment results, vulnerability scan reports, "
+            "and plan of action and milestones for the ATO package.",
+            **{"owner": "Cyber Lead", "status": "In Progress"},
+        )
+        ai_002 = self._item(
+            "action-item",
+            "AI-002: Secure Teaming Agreement with SubCo for Link 16 Expertise",
+            "Finalise the teaming agreement with SubCo Inc. to provide Link 16 "
+            "subject matter experts and MIDS-JTRS integration capability for "
+            "the proposal and programme execution.",
+            **{"owner": "BD Manager", "status": "Complete"},
+        )
+        ai_003 = self._item(
+            "action-item",
+            "AI-003: Rehearse Gold Team Demo Scenarios End-to-End",
+            "Conduct full end-to-end rehearsals of all four demonstration "
+            "scenarios with the solution team to ensure smooth delivery "
+            "during the Gold Team review.",
+            **{"owner": "Solution Architect", "status": "Open"},
+        )
+        ai_004 = self._item(
+            "action-item",
+            "AI-004: Finalize Basis of Estimate for CLIN 0001",
+            "Complete the bottom-up basis of estimate for CLIN 0001 System "
+            "Design & Development including labour hours, material costs, "
+            "and subcontractor pricing.",
+            **{"owner": "Pricing Manager", "status": "In Progress"},
+        )
+        ai_005 = self._item(
+            "action-item",
+            "AI-005: Obtain CEO Commitment Letter for Past Performance Volume",
+            "Secure the CEO commitment letter confirming corporate backing, "
+            "key personnel availability, and facility clearance for inclusion "
+            "in the Past Performance volume.",
+            **{"owner": "Capture Manager", "status": "Complete"},
+        )
+        self._compose(opp, ai_001, ai_002, ai_003, ai_004, ai_005)
+
+        # ==============================================================
+        # TRACE RELATIONS — responds_to
+        # ==============================================================
+        self._responds_to(sec_1_1, rfp_001, rfp_011, rfp_013)
+        self._responds_to(sec_1_2, rfp_001, rfp_002)
+        self._responds_to(sec_1_3, rfp_002, rfp_003)
+        self._responds_to(sec_1_4, rfp_004, rfp_005, rfp_006)
+        self._responds_to(sec_1_5, rfp_007, rfp_008, rfp_009, rfp_010)
+        self._responds_to(sec_1_6, rfp_014, rfp_015, rfp_016)
+        self._responds_to(sec_2_1, rfp_017, rfp_018)
+        self._responds_to(sec_2_4, rfp_011, rfp_012)
+
+        # ==============================================================
+        # TRACE RELATIONS — evidenced_by
+        # ==============================================================
+        # C2-related compliance responses evidenced by JADC2 and GCCS-J
+        self._evidenced_by(cr_001, pp_jadc2)
+        self._evidenced_by(cr_002, pp_gccs)
+        self._evidenced_by(cr_003, pp_jadc2)
+        self._evidenced_by(cr_004, pp_afatds)
+        self._evidenced_by(cr_005, pp_jadc2)
+        self._evidenced_by(cr_006, pp_nato)
+        self._evidenced_by(cr_007, pp_gccs)
+        self._evidenced_by(cr_008, pp_jadc2)
+        self._evidenced_by(cr_009, pp_gccs)
+        self._evidenced_by(cr_010, pp_jadc2)
+        self._evidenced_by(cr_011, pp_gccs)
+        self._evidenced_by(cr_012, pp_afatds)
+        self._evidenced_by(cr_013, pp_gccs)
+        self._evidenced_by(cr_014, pp_jadc2)
+        self._evidenced_by(cr_015, pp_jadc2)
+        self._evidenced_by(cr_016, pp_gccs)
+        self._evidenced_by(cr_017, pp_afatds)
+        self._evidenced_by(cr_018, pp_nato)
+
+        # ==============================================================
+        # TRACE RELATIONS — demonstrates
+        # ==============================================================
+        self._demonstrates(ds_001, rfp_001, rfp_002)
+        self._demonstrates(ds_002, rfp_002, rfp_003)
+        self._demonstrates(ds_003, rfp_004, rfp_012)
+        self._demonstrates(ds_004, rfp_007, rfp_008, rfp_009)
+
+        # ==============================================================
+        # TRACE RELATIONS — counters
+        # ==============================================================
+        # JADC2 theme counters Palantir (no prior C2 PoR)
+        self._counters(wt_jadc2, comp_palantir)
+        # Zero-Trust counters Raytheon (legacy architecture, slow ATO)
+        self._counters(wt_zt, comp_raytheon)
+        # DevSecOps counters Raytheon (legacy monolithic)
+        self._counters(wt_devsecops, comp_raytheon)
+        # Coalition counters L3Harris (limited coalition interop)
+        self._counters(wt_coalition, comp_l3)
+        # Cost counters all (open standards vs vendor lock-in)
+        self._counters(wt_cost, comp_raytheon)
+        self._counters(wt_cost, comp_l3)
+
+        # ==============================================================
+        # TRACE RELATIONS — prices
+        # ==============================================================
+        self._prices(clin_0001, rfp_001, rfp_002, rfp_003)
+        self._prices(clin_0002, rfp_011, rfp_012, rfp_013)
+        self._prices(clin_0003, rfp_007, rfp_008, rfp_009)
+        self._prices(clin_0004, rfp_017)
+        self._prices(clin_0005, rfp_011, rfp_018)
+        self._prices(clin_0006, rfp_014, rfp_015, rfp_016)
+
+        # ==============================================================
+        # TRACE RELATIONS — clarifies
+        # ==============================================================
+        self._clarifies(q_001, rfp_005)
+        self._clarifies(q_002, rfp_005)
+        self._clarifies(q_003, rfp_011)
+
+        # ==============================================================
+        # TRACE RELATIONS — mitigates
+        # ==============================================================
+        self._mitigates(ai_001, risk_002)
+        self._mitigates(ai_002, risk_004)
+        self._mitigates(ai_004, risk_003)
+
+        # ==============================================================
+        # MATRICES (5)
+        # ==============================================================
+
+        # 1. RFP Compliance Matrix
+        self._matrix(
+            name="RFP Compliance Matrix",
+            description=(
+                "Traces each RFP requirement to the proposal sections that "
+                "respond to it and the demo scenarios that demonstrate it."
+            ),
+            columns=[
+                {
+                    "label": "RFP Requirement",
+                    "seed_item_type_slug": "rfp-requirement",
+                },
+                {
+                    "label": "Proposal Sections",
+                    "relation_name": "responds_to",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+                {
+                    "label": "Demo Scenarios",
+                    "relation_name": "demonstrates",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 2. Past Performance Traceability
+        self._matrix(
+            name="Past Performance Traceability",
+            description=(
+                "Traces each compliance response to the past performance "
+                "citation that provides evidence."
+            ),
+            columns=[
+                {
+                    "label": "Compliance Response",
+                    "seed_item_type_slug": "compliance-response",
+                },
+                {
+                    "label": "Evidenced By",
+                    "relation_name": "evidenced_by",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 3. Competitive Win Theme Matrix
+        self._matrix(
+            name="Competitive Win Theme Matrix",
+            description=(
+                "Maps each win theme to the competitors it is designed "
+                "to counter."
+            ),
+            columns=[
+                {
+                    "label": "Win Theme",
+                    "seed_item_type_slug": "win-theme",
+                },
+                {
+                    "label": "Counters Competitor",
+                    "relation_name": "counters",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 4. Pricing to Requirements Traceability
+        self._matrix(
+            name="Pricing to Requirements Traceability",
+            description=(
+                "Traces each pricing element (CLIN) to the RFP requirements "
+                "it prices."
+            ),
+            columns=[
+                {
+                    "label": "Pricing Element",
+                    "seed_item_type_slug": "pricing-element",
+                },
+                {
+                    "label": "Prices Requirement",
+                    "relation_name": "prices",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 5. Risk Mitigation Matrix
+        self._matrix(
+            name="Risk Mitigation Matrix",
+            description=(
+                "Traces each risk to the action items that mitigate it."
+            ),
+            columns=[
+                {
+                    "label": "Risk",
+                    "seed_item_type_slug": "risk",
+                },
+                {
+                    "label": "Mitigated By",
+                    "relation_name": "mitigates",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+            ],
+        )
+
+    def _setup_enterprise_sales_schema(self, admin):
+        """
+        Create item types, custom fields, custom relation types, and
+        document templates for the Enterprise Software Deal vault.
+        Populates ``self._types`` and ``self._relations``.
+        """
+
+        # Built-in relation types already created by Vault.save()
+        self._relations = {r.name: r for r in RelationType.objects.filter(vault=self._vault)}
+
+        # Ensure is_composed_of has no source type constraint
+        rt = self._relations["is_composed_of"]
+        rt.source_item_type = None
+        rt.target_item_type = None
+        rt.save(update_fields=["source_item_type", "target_item_type"])
+
+        # -- Item types ---------------------------------------------------
+        item_types = [
+            ("Opportunity", "opportunity", "A top-level sales opportunity or deal.", "target"),
+            ("Stakeholder", "stakeholder", "A key person involved in the buying decision.", "users"),
+            ("Customer Requirement", "customer-requirement", "A requirement stated by the customer, typically from an RFP or discovery session.", "file-text"),
+            ("Solution Component", "solution-component", "A product module or capability offered to address customer needs.", "puzzle"),
+            ("Proposal Section", "proposal-section", "A section of the sales proposal document.", "book-open"),
+            ("Security Response", "security-response", "A response to a security or compliance questionnaire item.", "shield-check"),
+            ("POC Scenario", "poc-scenario", "A proof-of-concept scenario designed to validate a customer requirement.", "play"),
+            ("Objection", "objection", "A customer objection or concern raised during the sales process.", "message-circle-warning"),
+            ("Talking Point", "talking-point", "A prepared response or message to address an objection or concern.", "message-square"),
+            ("Competitor", "competitor", "A competing vendor or product in the deal.", "swords"),
+            ("Risk", "risk", "A risk that could jeopardise the deal outcome.", "alert-triangle"),
+            ("Action Item", "action-item", "A task or action to be completed by the deal team.", "circle-check"),
+            ("Meeting Note", "meeting-note", "Notes from a customer or internal meeting.", "notebook-pen"),
+            ("Integration", "integration", "A system integration required for the solution deployment.", "plug"),
+            ("Information", "information", "A textual section within a document, such as Purpose, Scope, or Definitions.", "text"),
+        ]
+        self._types = {}
+        for name, slug, desc, icon in item_types:
+            obj, created = ItemType.objects.get_or_create(
+                vault=self._vault,
+                slug=slug,
+                defaults={"name": name, "description": desc, "icon": icon},
+            )
+            self._types[slug] = obj
+            status = "Created" if created else "Exists"
+            self.stdout.write(f"  {status}: ItemType '{name}'")
+
+        # -- Custom fields ------------------------------------------------
+        custom_fields = [
+            # opportunity
+            ("opportunity", "ARR Value", "arr-value", "text", False, {}),
+            ("opportunity", "Stage", "stage", "choice", False, {"choices": ["Discovery", "Qualification", "POC", "Proposal", "Negotiation", "Closed Won", "Closed Lost"]}),
+            ("opportunity", "Close Date", "close-date", "date", False, {}),
+            ("opportunity", "Industry", "industry", "text", False, {}),
+            # stakeholder
+            ("stakeholder", "Role", "role", "text", False, {}),
+            ("stakeholder", "Disposition", "disposition", "choice", False, {"choices": ["Champion", "Supporter", "Neutral", "Skeptic", "Blocker"]}),
+            ("stakeholder", "Influence Level", "influence-level", "choice", False, {"choices": ["Decision Maker", "Strong Influence", "Some Influence", "Minimal"]}),
+            ("stakeholder", "Department", "department", "text", False, {}),
+            # customer-requirement
+            ("customer-requirement", "Category", "category", "choice", False, {"choices": ["Functional", "Security", "Integration", "Performance", "Compliance", "Support"]}),
+            ("customer-requirement", "Priority", "priority", "choice", False, {"choices": ["Must Have", "Should Have", "Nice to Have"]}),
+            ("customer-requirement", "Source", "source", "text", False, {}),
+            # solution-component
+            ("solution-component", "Module", "module", "text", False, {}),
+            ("solution-component", "Availability", "availability", "choice", False, {"choices": ["GA", "Beta", "Roadmap", "Custom Dev"]}),
+            # proposal-section
+            ("proposal-section", "Section Number", "section-number", "text", False, {}),
+            ("proposal-section", "Author", "author", "text", False, {}),
+            ("proposal-section", "Status", "status", "choice", False, {"choices": ["Not Started", "Draft", "Review", "Final"]}),
+            # security-response
+            ("security-response", "Framework", "framework", "choice", False, {"choices": ["SOC 2 Type II", "ISO 27001", "GDPR", "PCI DSS", "NIST CSF", "Other"]}),
+            ("security-response", "Compliance Status", "compliance-status", "choice", False, {"choices": ["Compliant", "Partial", "Planned", "N-A"]}),
+            # poc-scenario
+            ("poc-scenario", "Success Criteria", "success-criteria", "text", False, {}),
+            ("poc-scenario", "Duration", "duration", "text", False, {}),
+            ("poc-scenario", "Status", "status", "choice", False, {"choices": ["Planned", "In Progress", "Passed", "Failed", "Deferred"]}),
+            # objection
+            ("objection", "Category", "category", "choice", False, {"choices": ["Price", "Security", "Migration", "Feature Gap", "Vendor Risk", "Timeline"]}),
+            ("objection", "Severity", "severity", "choice", False, {"choices": ["Deal Breaker", "Major", "Minor"]}),
+            # talking-point
+            ("talking-point", "Audience", "audience", "text", False, {}),
+            # competitor
+            ("competitor", "Product", "product", "text", False, {}),
+            ("competitor", "Strength", "strength", "text", False, {}),
+            ("competitor", "Weakness", "weakness", "text", False, {}),
+            ("competitor", "Incumbency", "incumbency", "choice", False, {"choices": ["Incumbent", "Also Bidding", "Preferred Alternate"]}),
+            # risk
+            ("risk", "Severity", "severity", "choice", False, {"choices": ["Low", "Medium", "High", "Critical"]}),
+            ("risk", "Likelihood", "likelihood", "choice", False, {"choices": ["Low", "Medium", "High"]}),
+            ("risk", "Risk Area", "risk-area", "choice", False, {"choices": ["Technical", "Commercial", "Competitive", "Timeline", "Security"]}),
+            # action-item
+            ("action-item", "Owner", "owner", "text", False, {}),
+            ("action-item", "Due Date", "due-date", "date", False, {}),
+            ("action-item", "Status", "status", "choice", False, {"choices": ["Open", "In Progress", "Complete", "Blocked"]}),
+            # meeting-note
+            ("meeting-note", "Meeting Date", "meeting-date", "date", False, {}),
+            ("meeting-note", "Attendees", "attendees", "text", False, {}),
+            ("meeting-note", "Meeting Type", "meeting-type", "choice", False, {"choices": ["Discovery", "Demo", "Technical", "Executive", "Negotiation", "Internal"]}),
+            # integration
+            ("integration", "System", "system", "text", False, {}),
+            ("integration", "Protocol", "protocol", "choice", False, {"choices": ["REST API", "SFTP", "JDBC", "OAuth-SAML", "Webhook", "Custom"]}),
+            ("integration", "Complexity", "complexity", "choice", False, {"choices": ["Low", "Medium", "High"]}),
+        ]
+        for type_slug, name, slug, kind, required, options in custom_fields:
+            item_type = self._types[type_slug]
+            _, created = CustomFieldDefinition.objects.get_or_create(
+                item_type=item_type,
+                slug=slug,
+                defaults={
+                    "name": name,
+                    "field_kind": kind,
+                    "is_required": required,
+                    "options": options,
+                },
+            )
+            status = "Created" if created else "Exists"
+            self.stdout.write(f"  {status}: CustomField '{type_slug}.{name}'")
+
+        # -- Custom relation types ----------------------------------------
+        custom_rels = [
+            {
+                "kind": "trace",
+                "name": "addresses",
+                "forward_label": "addresses",
+                "reverse_label": "is addressed by",
+                "description": "A solution component addresses a customer requirement.",
+                "source_item_type": self._types["solution-component"],
+                "target_item_type": self._types["customer-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "validates",
+                "forward_label": "validates",
+                "reverse_label": "is validated by",
+                "description": "A POC scenario validates a customer requirement.",
+                "source_item_type": self._types["poc-scenario"],
+                "target_item_type": self._types["customer-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "answers",
+                "forward_label": "answers",
+                "reverse_label": "is answered by",
+                "description": "A security response answers a customer requirement.",
+                "source_item_type": self._types["security-response"],
+                "target_item_type": self._types["customer-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "counters",
+                "forward_label": "counters",
+                "reverse_label": "is countered by",
+                "description": "A talking point counters an objection.",
+                "source_item_type": self._types["talking-point"],
+                "target_item_type": self._types["objection"],
+            },
+            {
+                "kind": "trace",
+                "name": "competes_with",
+                "forward_label": "competes with",
+                "reverse_label": "is competed by",
+                "description": "A competitor competes with a solution component.",
+                "source_item_type": self._types["competitor"],
+                "target_item_type": self._types["solution-component"],
+            },
+            {
+                "kind": "trace",
+                "name": "mitigates",
+                "forward_label": "mitigates",
+                "reverse_label": "is mitigated by",
+                "description": "An action or control mitigates a risk.",
+                "source_item_type": None,
+                "target_item_type": None,
+            },
+            {
+                "kind": "trace",
+                "name": "influences",
+                "forward_label": "influences",
+                "reverse_label": "is influenced by",
+                "description": "A stakeholder influences a customer requirement.",
+                "source_item_type": self._types["stakeholder"],
+                "target_item_type": self._types["customer-requirement"],
+            },
+            {
+                "kind": "trace",
+                "name": "covers",
+                "forward_label": "covers",
+                "reverse_label": "is covered by",
+                "description": "A proposal section covers a customer requirement.",
+                "source_item_type": self._types["proposal-section"],
+                "target_item_type": self._types["customer-requirement"],
+            },
+        ]
+        for cr in custom_rels:
+            obj, created = RelationType.objects.update_or_create(
+                vault=self._vault,
+                name=cr["name"],
+                defaults={
+                    "kind": cr["kind"],
+                    "forward_label": cr["forward_label"],
+                    "reverse_label": cr["reverse_label"],
+                    "description": cr["description"],
+                    "source_item_type": cr["source_item_type"],
+                    "target_item_type": cr["target_item_type"],
+                    "is_builtin": False,
+                },
+            )
+            self._relations[cr["name"]] = obj
+            tag = "Created" if created else "Updated"
+            self.stdout.write(f"  {tag} custom relation type: {cr['name']}")
+
+        # -- Document templates -------------------------------------------
+        self.stdout.write("Seeding document templates...")
+        doc_templates = [
+            (
+                "information",
+                "{{heading}} {{title}}\n\n{{description}}\n",
+            ),
+            (
+                "customer-requirement",
+                "{{heading}} {{title}}\n\n"
+                "| Field | Value |\n"
+                "|---|---|\n"
+                "| **Category** | {{category}} |\n"
+                "| **Priority** | {{priority}} |\n"
+                "| **Source** | {{source}} |\n"
+                "| **Status** | {{status}} |\n"
+                "| **Version** | {{current_version}} |\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "security-response",
+                "{{heading}} {{title}}\n\n"
+                "**Framework:** {{framework}} | **Compliance Status:** {{compliance-status}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "objection",
+                "{{heading}} {{title}}\n\n"
+                "**Category:** {{category}} | **Severity:** {{severity}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "stakeholder",
+                "{{heading}} {{title}}\n\n"
+                "**Role:** {{role}} | **Disposition:** {{disposition}} | "
+                "**Influence Level:** {{influence-level}} | **Department:** {{department}}\n\n"
+                "{{description}}\n",
+            ),
+            (
+                "poc-scenario",
+                "{{heading}} {{title}}\n\n"
+                "**Status:** {{status}} | **Duration:** {{duration}}\n\n"
+                "**Success Criteria:** {{success-criteria}}\n\n"
+                "{{description}}\n",
+            ),
+        ]
+        for type_slug, template_str in doc_templates:
+            item_type = self._types[type_slug]
+            DocumentTemplate.objects.update_or_create(
+                item_type=item_type,
+                defaults={"template": template_str, "updated_by": self._author},
+            )
+            self.stdout.write(f"  Seeded: DocumentTemplate for '{type_slug}'")
+
+    # ------------------------------------------------------------------
+    # Enterprise Software Deal example data
+    # ------------------------------------------------------------------
+
+    def _build_enterprise_deal(self):
+
+        # ==============================================================
+        # Shorthand helpers for this vault's relation types
+        # ==============================================================
+        def _addresses(source, *targets):
+            for t in targets:
+                self._rel("addresses", source, t)
+
+        def _validates(source, *targets):
+            for t in targets:
+                self._rel("validates", source, t)
+
+        def _answers(source, *targets):
+            for t in targets:
+                self._rel("answers", source, t)
+
+        def _counters(source, *targets):
+            for t in targets:
+                self._rel("counters", source, t)
+
+        def _competes_with(source, *targets):
+            for t in targets:
+                self._rel("competes_with", source, t)
+
+        def _mitigates(source, *targets):
+            for t in targets:
+                self._rel("mitigates", source, t)
+
+        def _influences(source, *targets):
+            for t in targets:
+                self._rel("influences", source, t)
+
+        def _covers(source, *targets):
+            for t in targets:
+                self._rel("covers", source, t)
+
+        # ==============================================================
+        # OPPORTUNITY
+        # ==============================================================
+        opp = self._item(
+            "opportunity",
+            "Meridian Analytics \u2014 Global Trust Bank",
+            "Enterprise analytics platform deal with Global Trust Bank, "
+            "a top-20 global financial institution. The bank is replacing "
+            "its legacy BI tooling and evaluating four vendors for a "
+            "five-year enterprise license covering 5,000 users across "
+            "retail banking, risk, and finance divisions.",
+            **{"arr-value": "$2,400,000", "stage": "POC", "industry": "Financial Services"},
+        )
+
+        # ==============================================================
+        # CUSTOMER REQUIREMENTS (standalone — not composed under opp)
+        # ==============================================================
+        cr01 = self._item(
+            "customer-requirement",
+            "CR-001: Heterogeneous Data Source Connectivity",
+            "The platform must connect to at least five heterogeneous data "
+            "sources (relational databases, cloud warehouses, flat files, "
+            "APIs, and streaming) within four hours of initial configuration.",
+            **{"category": "Functional", "priority": "Must Have", "source": "RFP Section 3.1"},
+        )
+        cr02 = self._item(
+            "customer-requirement",
+            "CR-002: Sub-Second Interactive Dashboards",
+            "Interactive dashboards must deliver sub-second query response "
+            "times on datasets up to 500 million rows, with no pre-aggregation "
+            "required for common analytical queries.",
+            **{"category": "Performance", "priority": "Must Have", "source": "RFP Section 3.2"},
+        )
+        cr03 = self._item(
+            "customer-requirement",
+            "CR-003: Self-Service Report Builder",
+            "Business users without SQL or technical skills must be able to "
+            "create, modify, and schedule reports through a drag-and-drop "
+            "interface with guided data selection.",
+            **{"category": "Functional", "priority": "Must Have", "source": "RFP Section 3.3"},
+        )
+        cr04 = self._item(
+            "customer-requirement",
+            "CR-004: SSO Integration with Okta via SAML 2.0",
+            "The platform must integrate with the bank's existing Okta "
+            "identity provider using SAML 2.0 for single sign-on, supporting "
+            "just-in-time user provisioning and group-based role mapping.",
+            **{"category": "Security", "priority": "Must Have", "source": "RFP Section 4.1"},
+        )
+        cr05 = self._item(
+            "customer-requirement",
+            "CR-005: Role-Based Access Control with Row-Level Security",
+            "The platform must enforce role-based access control with "
+            "row-level security policies that restrict data visibility "
+            "by division, region, and classification level.",
+            **{"category": "Security", "priority": "Must Have", "source": "RFP Section 4.2"},
+        )
+        cr06 = self._item(
+            "customer-requirement",
+            "CR-006: SOC 2 Type II Compliance",
+            "The vendor must hold a current SOC 2 Type II attestation "
+            "with no critical findings, covering all infrastructure and "
+            "application services used to deliver the platform.",
+            **{"category": "Compliance", "priority": "Must Have", "source": "RFP Section 4.3"},
+        )
+        cr07 = self._item(
+            "customer-requirement",
+            "CR-007: ISO 27001 Certification",
+            "The vendor must maintain ISO 27001 certification for its "
+            "information security management system, with the scope "
+            "covering product development and cloud operations.",
+            **{"category": "Compliance", "priority": "Must Have", "source": "RFP Section 4.4"},
+        )
+        cr08 = self._item(
+            "customer-requirement",
+            "CR-008: Data Encryption at Rest and in Transit",
+            "All data must be encrypted at rest using AES-256 and in "
+            "transit using TLS 1.2 or higher. Customer-managed encryption "
+            "keys must be supported for data at rest.",
+            **{"category": "Security", "priority": "Must Have", "source": "RFP Section 4.5"},
+        )
+        cr09 = self._item(
+            "customer-requirement",
+            "CR-009: REST API with OpenAPI Specification",
+            "The platform must expose a comprehensive REST API documented "
+            "with an OpenAPI 3.0 specification, enabling embedding of "
+            "dashboards and programmatic data access.",
+            **{"category": "Integration", "priority": "Must Have", "source": "RFP Section 5.1"},
+        )
+        cr10 = self._item(
+            "customer-requirement",
+            "CR-010: Automated Regulatory Report Generation",
+            "The platform must support automated generation of regulatory "
+            "reports including Basel III capital adequacy and CCAR stress "
+            "testing outputs in prescribed formats.",
+            **{"category": "Functional", "priority": "Should Have", "source": "RFP Section 3.4"},
+        )
+        cr11 = self._item(
+            "customer-requirement",
+            "CR-011: Data Lineage and Audit Trail",
+            "Full data lineage must be tracked from source ingestion through "
+            "transformation to final dashboard output, with an immutable "
+            "audit trail of all data access and modifications.",
+            **{"category": "Compliance", "priority": "Must Have", "source": "RFP Section 4.6"},
+        )
+        cr12 = self._item(
+            "customer-requirement",
+            "CR-012: 5,000 Concurrent Users with Sub-3s Page Load",
+            "The platform must support 5,000 concurrent users with page "
+            "load times under three seconds at the 95th percentile, "
+            "verified through load testing.",
+            **{"category": "Performance", "priority": "Must Have", "source": "RFP Section 6.1"},
+        )
+        cr13 = self._item(
+            "customer-requirement",
+            "CR-013: 99.9% SLA with DR/BC Procedures",
+            "The vendor must guarantee a 99.9% uptime SLA with documented "
+            "disaster recovery and business continuity procedures, including "
+            "RPO < 1 hour and RTO < 4 hours.",
+            **{"category": "Performance", "priority": "Must Have", "source": "RFP Section 6.2"},
+        )
+        cr14 = self._item(
+            "customer-requirement",
+            "CR-014: On-Premises Deployment Option",
+            "The platform must support a hybrid cloud deployment model "
+            "with an on-premises option for sensitive data workloads, "
+            "managed through the same control plane as the cloud instance.",
+            **{"category": "Integration", "priority": "Should Have", "source": "RFP Section 5.2"},
+        )
+        cr15 = self._item(
+            "customer-requirement",
+            "CR-015: Predictive Analytics and ML Integration",
+            "The platform must support embedded predictive analytics "
+            "with the ability to train, deploy, and monitor ML models "
+            "on in-platform data without requiring a separate ML tool.",
+            **{"category": "Functional", "priority": "Should Have", "source": "Dr. Priya Patel"},
+        )
+        cr16 = self._item(
+            "customer-requirement",
+            "CR-016: Mobile-Responsive Dashboards",
+            "Dashboards must be fully responsive on iOS and Android "
+            "devices, with touch-optimised interactions and offline "
+            "caching for key executive summaries.",
+            **{"category": "Functional", "priority": "Nice to Have", "source": "Lisa Zhang"},
+        )
+        cr17 = self._item(
+            "customer-requirement",
+            "CR-017: Migration Tooling from Existing BI Platform",
+            "The vendor must provide automated migration tooling to "
+            "convert existing Looker dashboards, data models, and "
+            "scheduled reports to the new platform with minimal manual effort.",
+            **{"category": "Integration", "priority": "Must Have", "source": "RFP Section 5.3"},
+        )
+        cr18 = self._item(
+            "customer-requirement",
+            "CR-018: White-Labeling for Customer-Facing Reports",
+            "The platform must support white-label embedding so the bank "
+            "can deliver branded analytics portals to its own customers "
+            "without exposing the vendor's identity.",
+            **{"category": "Functional", "priority": "Nice to Have", "source": "Lisa Zhang"},
+        )
+
+        # ==============================================================
+        # SOLUTION COMPONENTS (composed under opportunity)
+        # ==============================================================
+        sc_data_fabric = self._item(
+            "solution-component",
+            "Meridian Data Fabric",
+            "Real-time and batch data connectors supporting 200+ sources "
+            "including relational databases, cloud warehouses, flat files, "
+            "APIs, and streaming platforms. Zero-code configuration with "
+            "automatic schema detection.",
+            **{"module": "Data Integration", "availability": "GA"},
+        )
+        sc_dashboard = self._item(
+            "solution-component",
+            "Meridian Dashboard Studio",
+            "Drag-and-drop dashboard builder with 50+ visualisation types, "
+            "sub-second query engine, responsive layouts, and collaborative "
+            "editing. Supports parameterised filters and drill-through navigation.",
+            **{"module": "Visualization", "availability": "GA"},
+        )
+        sc_ml = self._item(
+            "solution-component",
+            "Meridian ML Insights",
+            "Embedded ML models and predictive analytics engine with "
+            "AutoML capabilities, model versioning, and one-click deployment "
+            "to production dashboards. Supports Python and R notebooks.",
+            **{"module": "Analytics", "availability": "GA"},
+        )
+        sc_admin = self._item(
+            "solution-component",
+            "Meridian Admin Console",
+            "SSO, RBAC, and tenant management console with support for "
+            "SAML 2.0, OIDC, SCIM provisioning, row-level security policies, "
+            "and granular permission templates.",
+            **{"module": "Administration", "availability": "GA"},
+        )
+        sc_api = self._item(
+            "solution-component",
+            "Meridian API Gateway",
+            "REST and GraphQL APIs with OpenAPI 3.0 documentation, "
+            "rate limiting, API key management, and webhook support. "
+            "Enables programmatic dashboard creation and data access.",
+            **{"module": "Developer Platform", "availability": "GA"},
+        )
+        sc_embed = self._item(
+            "solution-component",
+            "Meridian Embedded Analytics",
+            "White-label embed SDK for React, Angular, and vanilla JS. "
+            "Supports iframe and native component embedding with "
+            "theme customisation and domain whitelisting.",
+            **{"module": "Embedding", "availability": "GA"},
+        )
+        sc_catalog = self._item(
+            "solution-component",
+            "Meridian Data Catalog",
+            "Metadata management, data lineage visualisation, impact "
+            "analysis, and automated data classification. Integrates "
+            "with the Data Fabric for end-to-end governance.",
+            **{"module": "Governance", "availability": "Beta"},
+        )
+        sc_compliance = self._item(
+            "solution-component",
+            "Meridian Compliance Module",
+            "Audit trail, regulatory report templates, data retention "
+            "policies, and compliance dashboards. Pre-built templates "
+            "for Basel III, CCAR, and SOX reporting.",
+            **{"module": "Compliance", "availability": "GA"},
+        )
+        self._compose(
+            opp,
+            sc_data_fabric, sc_dashboard, sc_ml, sc_admin,
+            sc_api, sc_embed, sc_catalog, sc_compliance,
+        )
+
+        # ==============================================================
+        # PROPOSAL SECTIONS (composed under opportunity)
+        # ==============================================================
+        ps_exec = self._item(
+            "proposal-section",
+            "Executive Summary",
+            "High-level overview of Meridian Analytics' value proposition "
+            "for Global Trust Bank, including strategic alignment, key "
+            "differentiators, and expected business outcomes.",
+            **{"section-number": "1", "status": "Final"},
+        )
+        ps_solution = self._item(
+            "proposal-section",
+            "Solution Overview",
+            "Detailed description of the Meridian platform architecture, "
+            "modules, deployment topology, and how each component maps "
+            "to Global Trust Bank's stated requirements.",
+            **{"section-number": "2", "status": "Final"},
+        )
+        ps_security = self._item(
+            "proposal-section",
+            "Security & Compliance",
+            "Comprehensive security posture overview including certifications, "
+            "encryption standards, access controls, and compliance with "
+            "financial services regulations.",
+            **{"section-number": "3", "status": "Review"},
+        )
+        ps_impl = self._item(
+            "proposal-section",
+            "Implementation Plan",
+            "Phased implementation roadmap covering data integration, "
+            "dashboard migration, SSO configuration, UAT, and production "
+            "go-live with detailed milestones and resource requirements.",
+            **{"section-number": "4", "status": "Draft"},
+        )
+        ps_pricing = self._item(
+            "proposal-section",
+            "Pricing & Commercial Terms",
+            "Pricing structure, volume tiers, payment terms, SLA "
+            "commitments, and contract options including annual and "
+            "multi-year agreements.",
+            **{"section-number": "5", "status": "Draft"},
+        )
+        self._compose(opp, ps_exec, ps_solution, ps_security, ps_impl, ps_pricing)
+
+        # -- Solution Overview sub-items --
+        info_arch = self._item(
+            "information",
+            "Platform Architecture",
+            "Meridian Analytics is built on a cloud-native microservices "
+            "architecture deployed on AWS and Azure. The platform uses a "
+            "distributed query engine for sub-second performance and a "
+            "multi-tenant data isolation model.",
+        )
+        info_modules = self._item(
+            "information",
+            "Module Overview",
+            "The platform comprises eight integrated modules: Data Fabric, "
+            "Dashboard Studio, ML Insights, Admin Console, API Gateway, "
+            "Embedded Analytics, Data Catalog, and Compliance Module.",
+        )
+        self._compose(ps_solution, info_arch, info_modules)
+
+        # -- Implementation Plan sub-items --
+        info_timeline = self._item(
+            "information",
+            "Implementation Timeline",
+            "The implementation follows a four-phase approach over 14 weeks: "
+            "Phase 1 (Weeks 1\u20133) \u2014 Infrastructure and SSO setup; "
+            "Phase 2 (Weeks 4\u20138) \u2014 Data integration and dashboard migration; "
+            "Phase 3 (Weeks 9\u201311) \u2014 UAT and training; "
+            "Phase 4 (Weeks 12\u201314) \u2014 Production rollout and hypercare.",
+        )
+        info_milestones = self._item(
+            "information",
+            "Key Milestones",
+            "M1: Environment provisioned and SSO live (Week 3). "
+            "M2: Core dashboards migrated and validated (Week 8). "
+            "M3: UAT sign-off from all divisions (Week 11). "
+            "M4: Production go-live with 99.9% SLA active (Week 14).",
+        )
+        self._compose(ps_impl, info_timeline, info_milestones)
+
+        # ==============================================================
+        # SECURITY RESPONSES (composed under Security & Compliance)
+        # ==============================================================
+        sec_soc2 = self._item(
+            "security-response",
+            "SOC 2 Type II Compliance",
+            "Meridian holds a current SOC 2 Type II attestation issued "
+            "by Deloitte, covering all five trust service criteria. The "
+            "most recent audit completed with zero critical findings.",
+            **{"framework": "SOC 2 Type II", "compliance-status": "Compliant"},
+        )
+        sec_iso = self._item(
+            "security-response",
+            "ISO 27001 Certification",
+            "Meridian's ISMS is certified to ISO 27001:2022 by BSI, "
+            "with scope covering product development, cloud operations, "
+            "and customer support functions.",
+            **{"framework": "ISO 27001", "compliance-status": "Compliant"},
+        )
+        sec_encrypt = self._item(
+            "security-response",
+            "Data Encryption Standards",
+            "All data is encrypted at rest using AES-256 with customer-managed "
+            "keys via AWS KMS / Azure Key Vault. Data in transit is protected "
+            "by TLS 1.3 with certificate pinning for API connections.",
+            **{"framework": "NIST CSF", "compliance-status": "Compliant"},
+        )
+        sec_sso = self._item(
+            "security-response",
+            "SSO via SAML 2.0 and OIDC",
+            "The platform supports SAML 2.0 and OpenID Connect for SSO "
+            "integration with all major identity providers including Okta, "
+            "Azure AD, and Ping Identity. JIT provisioning and SCIM are supported.",
+            **{"framework": "Other", "compliance-status": "Compliant"},
+        )
+        sec_rbac = self._item(
+            "security-response",
+            "RBAC with Row-Level Security",
+            "Granular role-based access control with row-level security "
+            "policies defined at the dataset level. Supports attribute-based "
+            "rules using division, region, and classification tags.",
+            **{"framework": "Other", "compliance-status": "Compliant"},
+        )
+        sec_pci = self._item(
+            "security-response",
+            "PCI DSS Alignment",
+            "Meridian is aligned with PCI DSS v4.0 requirements for data "
+            "handling and access control. Full PCI DSS certification is in "
+            "progress with expected completion in Q3.",
+            **{"framework": "PCI DSS", "compliance-status": "Partial"},
+        )
+        self._compose(ps_security, sec_soc2, sec_iso, sec_encrypt, sec_sso, sec_rbac, sec_pci)
+
+        # ==============================================================
+        # INTEGRATIONS (composed under Implementation Plan)
+        # ==============================================================
+        int_temenos = self._item(
+            "integration",
+            "Core Banking \u2014 Temenos T24",
+            "Direct JDBC connectivity to Temenos T24 core banking system "
+            "for real-time transaction data, account balances, and customer "
+            "profiles. Requires VPN tunnel and database-level read replica.",
+            **{"system": "Temenos T24", "protocol": "JDBC", "complexity": "High"},
+        )
+        int_snowflake = self._item(
+            "integration",
+            "Data Warehouse \u2014 Snowflake",
+            "Native Snowflake connector using Snowflake's partner connect. "
+            "Provides direct query pushdown for optimal performance on "
+            "the bank's existing Snowflake Enterprise instance.",
+            **{"system": "Snowflake", "protocol": "REST API", "complexity": "Low"},
+        )
+        int_okta = self._item(
+            "integration",
+            "Identity Provider \u2014 Okta",
+            "SAML 2.0 and SCIM integration with the bank's Okta Universal "
+            "Directory for SSO, automated user provisioning, and group-based "
+            "role assignment.",
+            **{"system": "Okta", "protocol": "OAuth-SAML", "complexity": "Medium"},
+        )
+        int_snow = self._item(
+            "integration",
+            "IT Service Management \u2014 ServiceNow",
+            "REST API integration with ServiceNow for automated incident "
+            "creation, change request workflows, and embedded analytics "
+            "widgets within the ServiceNow portal.",
+            **{"system": "ServiceNow", "protocol": "REST API", "complexity": "Low"},
+        )
+        int_bloomberg = self._item(
+            "integration",
+            "Market Data \u2014 Bloomberg Terminal",
+            "Custom adapter for Bloomberg B-PIPE and SAPI data feeds, "
+            "providing real-time market data ingestion for trading "
+            "analytics and risk dashboards.",
+            **{"system": "Bloomberg", "protocol": "Custom", "complexity": "High"},
+        )
+        self._compose(ps_impl, int_temenos, int_snowflake, int_okta, int_snow, int_bloomberg)
+
+        # ==============================================================
+        # POC SCENARIOS (composed under opportunity)
+        # ==============================================================
+        poc_pnl = self._item(
+            "poc-scenario",
+            "Real-Time P&L Dashboard",
+            "Connect to the bank's Snowflake instance, ingest P&L data, "
+            "and build an interactive profit-and-loss dashboard with "
+            "sub-two-second refresh on drill-down queries.",
+            **{
+                "success-criteria": "Connect to Snowflake, build P&L dashboard, <2s refresh",
+                "duration": "2 days",
+                "status": "Passed",
+            },
+        )
+        poc_self_service = self._item(
+            "poc-scenario",
+            "Self-Service Report Builder",
+            "Demonstrate that a business user from the finance team can "
+            "create a regulatory summary report without IT assistance "
+            "using the drag-and-drop report builder.",
+            **{
+                "success-criteria": "Business user creates regulatory summary without IT",
+                "duration": "1 day",
+                "status": "Passed",
+            },
+        )
+        poc_sso = self._item(
+            "poc-scenario",
+            "SSO + RBAC Enforcement",
+            "Configure Okta SSO login and demonstrate row-level security "
+            "filtering by division, ensuring users only see data for their "
+            "assigned business unit.",
+            **{
+                "success-criteria": "Okta SSO login, row-level security filters by division",
+                "duration": "1 day",
+                "status": "In Progress",
+            },
+        )
+        poc_reg = self._item(
+            "poc-scenario",
+            "Regulatory Report Automation",
+            "Auto-generate a Basel III capital adequacy report from the "
+            "bank's risk data warehouse, matching the prescribed regulatory "
+            "output format.",
+            **{
+                "success-criteria": "Auto-generate Basel III capital adequacy report",
+                "duration": "2 days",
+                "status": "Planned",
+            },
+        )
+        poc_api = self._item(
+            "poc-scenario",
+            "API Embed in Internal Portal",
+            "Embed a live analytics chart into the bank's ServiceNow "
+            "portal via iframe using the Meridian Embed SDK, with SSO "
+            "passthrough authentication.",
+            **{
+                "success-criteria": "Embed live chart in ServiceNow portal via iframe",
+                "duration": "1 day",
+                "status": "Planned",
+            },
+        )
+        poc_lineage = self._item(
+            "poc-scenario",
+            "Data Lineage & Audit Trail",
+            "Trace data from the Temenos T24 source through ETL "
+            "transformations in Snowflake to the final dashboard "
+            "visualisation, demonstrating full lineage and audit trail.",
+            **{
+                "success-criteria": "Trace data from T24 source through transformations to dashboard",
+                "duration": "1 day",
+                "status": "Planned",
+            },
+        )
+        self._compose(opp, poc_pnl, poc_self_service, poc_sso, poc_reg, poc_api, poc_lineage)
+
+        # ==============================================================
+        # STAKEHOLDERS (composed under opportunity)
+        # ==============================================================
+        sh_chen = self._item(
+            "stakeholder",
+            "Sarah Chen \u2014 Chief Financial Officer",
+            "Executive sponsor and primary decision maker. Motivated by "
+            "reducing time-to-insight for financial reporting and enabling "
+            "self-service analytics across the finance organisation.",
+            **{"role": "CFO", "disposition": "Champion", "influence-level": "Decision Maker", "department": "Finance"},
+        )
+        sh_williams = self._item(
+            "stakeholder",
+            "Marcus Williams \u2014 Chief Information Security Officer",
+            "Key technical gatekeeper with veto authority on security and "
+            "compliance matters. Requires thorough evidence of SOC 2, ISO 27001, "
+            "and encryption standards before approving any vendor.",
+            **{"role": "CISO", "disposition": "Blocker", "influence-level": "Strong Influence", "department": "Information Security"},
+        )
+        sh_patel = self._item(
+            "stakeholder",
+            "Dr. Priya Patel \u2014 Head of Data & Analytics",
+            "Technical champion who manages the bank's existing analytics "
+            "infrastructure. Advocates for modern data stack and embedded "
+            "ML capabilities to replace legacy tooling.",
+            **{"role": "Head of Data & Analytics", "disposition": "Supporter", "influence-level": "Strong Influence", "department": "Technology"},
+        )
+        sh_morrison = self._item(
+            "stakeholder",
+            "James Morrison \u2014 Head of Procurement",
+            "Controls the commercial evaluation and contract negotiation. "
+            "Focused on total cost of ownership, vendor stability, and "
+            "favourable payment terms.",
+            **{"role": "Head of Procurement", "disposition": "Neutral", "influence-level": "Decision Maker", "department": "Procurement"},
+        )
+        sh_zhang = self._item(
+            "stakeholder",
+            "Lisa Zhang \u2014 VP Retail Banking",
+            "End-user champion representing the largest user base. Interested "
+            "in mobile dashboards and customer-facing analytics for the "
+            "retail banking division.",
+            **{"role": "VP Retail Banking", "disposition": "Supporter", "influence-level": "Some Influence", "department": "Retail Banking"},
+        )
+        self._compose(opp, sh_chen, sh_williams, sh_patel, sh_morrison, sh_zhang)
+
+        # ==============================================================
+        # COMPETITORS (composed under opportunity)
+        # ==============================================================
+        comp_tableau = self._item(
+            "competitor",
+            "Tableau",
+            "Market-leading visualisation platform with a large partner "
+            "ecosystem. Strong in self-service analytics but expensive "
+            "at scale with per-user pricing.",
+            **{
+                "product": "Tableau Cloud",
+                "incumbency": "Also Bidding",
+                "strength": "Market leader, massive ecosystem, deep visualisation library",
+                "weakness": "Expensive at scale, weak real-time streaming, limited embedded ML",
+            },
+        )
+        comp_powerbi = self._item(
+            "competitor",
+            "Microsoft Power BI",
+            "Bundled with Microsoft 365, offering low entry cost and tight "
+            "integration with the Microsoft ecosystem. Less capable on "
+            "non-Microsoft data sources.",
+            **{
+                "product": "Power BI Premium",
+                "incumbency": "Also Bidding",
+                "strength": "Bundled with M365, low entry cost, familiar UI for business users",
+                "weakness": "Limited on non-Microsoft data sources, weak governance and lineage",
+            },
+        )
+        comp_looker = self._item(
+            "competitor",
+            "Looker",
+            "Currently deployed at the bank with 200+ existing dashboards. "
+            "Strong data modelling layer but uncertain roadmap following "
+            "Google Cloud acquisition.",
+            **{
+                "product": "Looker Enterprise",
+                "incumbency": "Incumbent",
+                "strength": "Already deployed, 200+ existing dashboards, strong LookML modelling",
+                "weakness": "Acquired by Google, uncertain roadmap, limited ML and predictive capabilities",
+            },
+        )
+        comp_thoughtspot = self._item(
+            "competitor",
+            "ThoughtSpot",
+            "AI-first analytics platform with natural language search. "
+            "Innovative approach but limited traction in financial services "
+            "with a smaller customer base.",
+            **{
+                "product": "ThoughtSpot One",
+                "incumbency": "Also Bidding",
+                "strength": "Natural language search, AI-first approach, strong search UX",
+                "weakness": "Small customer base in financial services, limited regulatory reporting",
+            },
+        )
+        self._compose(opp, comp_tableau, comp_powerbi, comp_looker, comp_thoughtspot)
+
+        # ==============================================================
+        # OBJECTIONS (composed under opportunity)
+        # ==============================================================
+        obj_migration = self._item(
+            "objection",
+            "Migration Risk from Looker",
+            "The bank has 200+ Looker dashboards in production and is "
+            "concerned about the effort, risk, and business disruption "
+            "of migrating to a new platform.",
+            **{"category": "Migration", "severity": "Major"},
+        )
+        obj_pricing = self._item(
+            "objection",
+            "Per-User Pricing Too Expensive at 5,000 Users",
+            "At the stated per-user pricing, the five-year TCO for 5,000 "
+            "users significantly exceeds the bank's budget allocation "
+            "and competing vendor proposals.",
+            **{"category": "Price", "severity": "Deal Breaker"},
+        )
+        obj_fedramp = self._item(
+            "objection",
+            "No FedRAMP Certification for Future Gov Contracts",
+            "The bank's government banking division requires FedRAMP "
+            "Moderate authorisation for any platform hosting government "
+            "client data. Meridian does not yet hold this certification.",
+            **{"category": "Feature Gap", "severity": "Minor"},
+        )
+        obj_vendor = self._item(
+            "objection",
+            "Meridian Is a Smaller Vendor \u2014 Business Continuity Concerns",
+            "Procurement has flagged Meridian's smaller market presence "
+            "compared to Tableau and Microsoft as a business continuity "
+            "risk, citing concerns about long-term viability.",
+            **{"category": "Vendor Risk", "severity": "Major"},
+        )
+        obj_timeline = self._item(
+            "objection",
+            "Implementation Timeline Exceeds Q3 Fiscal Deadline",
+            "The proposed 14-week implementation timeline extends beyond "
+            "the bank's Q3 fiscal year-end deadline, which is the budget "
+            "commitment cutoff for this initiative.",
+            **{"category": "Timeline", "severity": "Major"},
+        )
+        self._compose(opp, obj_migration, obj_pricing, obj_fedramp, obj_vendor, obj_timeline)
+
+        # ==============================================================
+        # TALKING POINTS (composed under opportunity)
+        # ==============================================================
+        tp_migration = self._item(
+            "talking-point",
+            "Automated Looker Migration Toolkit",
+            "Meridian offers a purpose-built Looker Migration Toolkit that "
+            "automatically converts LookML models, Explores, and dashboards "
+            "to the Meridian format. In pilot migrations, 85% of dashboards "
+            "converted without manual intervention.",
+            **{"audience": "Dr. Priya Patel, James Morrison"},
+        )
+        tp_pricing = self._item(
+            "talking-point",
+            "Volume Tier Pricing at 5,000+ Users",
+            "Meridian's Enterprise Volume Tier provides a 40% discount at "
+            "the 5,000-user level, bringing the per-user cost below Power BI "
+            "Premium when factoring in required add-ons for governance and "
+            "embedded analytics.",
+            **{"audience": "James Morrison, Sarah Chen"},
+        )
+        tp_vendor = self._item(
+            "talking-point",
+            "$50M Series D + 400 Enterprise Customers",
+            "Meridian closed a $50M Series D led by Sequoia in Q4, reaching "
+            "a $1.2B valuation. The company serves 400+ enterprise customers "
+            "including 12 of the top 50 global banks, with 140% net revenue "
+            "retention.",
+            **{"audience": "James Morrison, Marcus Williams"},
+        )
+        tp_fedramp = self._item(
+            "talking-point",
+            "FedRAMP Moderate \u2014 In Process, Q2 Target",
+            "Meridian's FedRAMP Moderate authorisation is in process with "
+            "the 3PAO assessment underway. Expected authorisation by Q2, "
+            "ahead of the bank's government division timeline.",
+            **{"audience": "Marcus Williams"},
+        )
+        tp_timeline = self._item(
+            "talking-point",
+            "Phased Rollout: Core Dashboards Live in 8 Weeks",
+            "A phased rollout plan delivers core P&L and risk dashboards "
+            "in 8 weeks (within Q3), with remaining migration and advanced "
+            "features completing in Phase 2 post-deadline. This meets the "
+            "budget commitment requirement.",
+            **{"audience": "Sarah Chen, Lisa Zhang"},
+        )
+        self._compose(opp, tp_migration, tp_pricing, tp_vendor, tp_fedramp, tp_timeline)
+
+        # ==============================================================
+        # RISKS (composed under opportunity)
+        # ==============================================================
+        risk_ciso = self._item(
+            "risk",
+            "CISO Blocks Deal Over SOC 2 Gap Finding",
+            "Marcus Williams may block the deal if he identifies any gaps "
+            "in the SOC 2 Type II report or if the bridge letter does not "
+            "adequately address the Q1 remediation items.",
+            **{"severity": "High", "likelihood": "High", "risk-area": "Security"},
+        )
+        risk_term = self._item(
+            "risk",
+            "Procurement Insists on 3-Year Term vs Annual",
+            "James Morrison's procurement team may insist on a three-year "
+            "commitment to secure volume pricing, which conflicts with "
+            "Meridian's preference for annual contracts.",
+            **{"severity": "Medium", "likelihood": "Medium", "risk-area": "Commercial"},
+        )
+        risk_poc = self._item(
+            "risk",
+            "POC Delayed by Bank IT Resource Constraints",
+            "The bank's IT team is stretched across multiple projects and "
+            "may not allocate sufficient resources for the POC environment "
+            "setup, delaying the evaluation timeline.",
+            **{"severity": "Medium", "likelihood": "High", "risk-area": "Timeline"},
+        )
+        risk_looker = self._item(
+            "risk",
+            "Looker Offers Aggressive Renewal Discount",
+            "Google/Looker may offer an aggressive renewal discount with "
+            "extended support commitments to retain the account, undermining "
+            "the business case for switching to Meridian.",
+            **{"severity": "High", "likelihood": "Medium", "risk-area": "Competitive"},
+        )
+        risk_budget = self._item(
+            "risk",
+            "Budget Reallocation Due to Pending M&A",
+            "Rumours of a pending acquisition could trigger a company-wide "
+            "budget freeze or reallocation, deferring the analytics platform "
+            "decision indefinitely.",
+            **{"severity": "Critical", "likelihood": "Low", "risk-area": "Commercial"},
+        )
+        self._compose(opp, risk_ciso, risk_term, risk_poc, risk_looker, risk_budget)
+
+        # ==============================================================
+        # ACTION ITEMS (composed under opportunity)
+        # ==============================================================
+        ai_exec = self._item(
+            "action-item",
+            "Schedule executive sponsor call \u2014 Sarah Chen + Meridian CEO",
+            "Arrange a 30-minute call between Sarah Chen (CFO) and "
+            "Meridian's CEO to discuss strategic partnership, long-term "
+            "roadmap alignment, and executive sponsorship commitment.",
+            **{"owner": "Account Executive", "status": "In Progress"},
+        )
+        ai_soc2 = self._item(
+            "action-item",
+            "Deliver SOC 2 bridge letter to Marcus Williams",
+            "Send the SOC 2 Type II bridge letter addressing Q1 "
+            "remediation items to Marcus Williams' security team for "
+            "review prior to the next security assessment meeting.",
+            **{"owner": "Security Lead", "status": "Complete"},
+        )
+        ai_migration = self._item(
+            "action-item",
+            "Prepare Looker migration assessment and effort estimate",
+            "Analyse the bank's 200+ Looker dashboards, classify by "
+            "complexity, and produce a detailed migration effort estimate "
+            "with timeline and resource requirements.",
+            **{"owner": "Solutions Engineer", "status": "In Progress"},
+        )
+        ai_poc = self._item(
+            "action-item",
+            "Run POC data connectivity test with Snowflake instance",
+            "Execute the data connectivity POC against the bank's "
+            "Snowflake sandbox environment to validate connector "
+            "performance and query pushdown capabilities.",
+            **{"owner": "Solutions Engineer", "status": "Complete"},
+        )
+        ai_pricing = self._item(
+            "action-item",
+            "Submit custom pricing model for 5,000-user tier",
+            "Work with Deal Desk to model a custom volume pricing "
+            "tier for 5,000 users that undercuts the competing Power BI "
+            "and Tableau proposals on total cost of ownership.",
+            **{"owner": "Deal Desk", "status": "Open"},
+        )
+        self._compose(opp, ai_exec, ai_soc2, ai_migration, ai_poc, ai_pricing)
+
+        # ==============================================================
+        # MEETING NOTES (composed under opportunity)
+        # ==============================================================
+        mn_discovery = self._item(
+            "meeting-note",
+            "Discovery Call \u2014 Initial Requirements Gathering",
+            "First call with Global Trust Bank stakeholders to understand "
+            "current analytics landscape, pain points with Looker, and "
+            "high-level requirements for the replacement platform. Key "
+            "takeaway: security and compliance are non-negotiable gates.",
+            **{"meeting-date": "2026-01-15", "meeting-type": "Discovery", "attendees": "Sarah Chen, Dr. Priya Patel, Lisa Zhang"},
+        )
+        mn_technical = self._item(
+            "meeting-note",
+            "Technical Deep Dive with Data Team",
+            "Deep dive into the bank's data architecture, Snowflake "
+            "deployment, Temenos T24 integration requirements, and "
+            "current ETL pipelines. Dr. Patel's team impressed by "
+            "Data Fabric's zero-code connector approach.",
+            **{"meeting-date": "2026-02-03", "meeting-type": "Technical", "attendees": "Dr. Priya Patel, 3x Data Engineers"},
+        )
+        mn_security = self._item(
+            "meeting-note",
+            "Security Review with CISO Office",
+            "Formal security review with Marcus Williams and his team. "
+            "Reviewed SOC 2 report, ISO 27001 certificate, encryption "
+            "standards, and incident response procedures. CISO requested "
+            "bridge letter for Q1 remediation items.",
+            **{"meeting-date": "2026-02-18", "meeting-type": "Technical", "attendees": "Marcus Williams, 2x Security Analysts"},
+        )
+        mn_exec = self._item(
+            "meeting-note",
+            "Executive Alignment \u2014 CFO + VP Retail",
+            "Executive alignment session with Sarah Chen and Lisa Zhang. "
+            "Discussed phased rollout strategy, Q3 budget commitment "
+            "timeline, and mobile dashboard requirements for the retail "
+            "banking division.",
+            **{"meeting-date": "2026-03-05", "meeting-type": "Executive", "attendees": "Sarah Chen, Lisa Zhang, Meridian CEO"},
+        )
+        self._compose(opp, mn_discovery, mn_technical, mn_security, mn_exec)
+
+        # ==============================================================
+        # TRACE RELATIONS
+        # ==============================================================
+
+        # Solution Components → addresses → Customer Requirements
+        _addresses(sc_data_fabric, cr01, cr14)
+        _addresses(sc_dashboard, cr02, cr03, cr16)
+        _addresses(sc_ml, cr15)
+        _addresses(sc_admin, cr04, cr05)
+        _addresses(sc_api, cr09, cr18)
+        _addresses(sc_embed, cr18)
+        _addresses(sc_catalog, cr11)
+        _addresses(sc_compliance, cr06, cr07, cr10, cr11)
+
+        # POC Scenarios → validates → Customer Requirements
+        _validates(poc_pnl, cr01, cr02)
+        _validates(poc_self_service, cr03)
+        _validates(poc_sso, cr04, cr05)
+        _validates(poc_reg, cr10)
+        _validates(poc_api, cr09, cr18)
+        _validates(poc_lineage, cr11)
+
+        # Security Responses → answers → Customer Requirements
+        _answers(sec_soc2, cr06)
+        _answers(sec_iso, cr07)
+        _answers(sec_encrypt, cr08)
+        _answers(sec_sso, cr04)
+        _answers(sec_rbac, cr05)
+        _answers(sec_pci, cr08)
+
+        # Talking Points → counters → Objections (1:1)
+        _counters(tp_migration, obj_migration)
+        _counters(tp_pricing, obj_pricing)
+        _counters(tp_vendor, obj_vendor)
+        _counters(tp_fedramp, obj_fedramp)
+        _counters(tp_timeline, obj_timeline)
+
+        # Competitors → competes_with → Solution Components
+        _competes_with(comp_tableau, sc_dashboard, sc_ml)
+        _competes_with(comp_powerbi, sc_dashboard, sc_compliance)
+        _competes_with(comp_looker, sc_dashboard, sc_catalog)
+        _competes_with(comp_thoughtspot, sc_dashboard, sc_ml)
+
+        # Stakeholders → influences → Customer Requirements
+        _influences(sh_chen, cr02, cr10, cr13)
+        _influences(sh_williams, cr04, cr05, cr06, cr07, cr08)
+        _influences(sh_patel, cr01, cr03, cr11, cr15)
+        _influences(sh_morrison, cr12, cr13, cr17)
+        _influences(sh_zhang, cr03, cr16, cr18)
+
+        # Proposal Sections → covers → Customer Requirements
+        _covers(ps_exec, cr02, cr13)
+        _covers(ps_solution, cr01, cr02, cr03, cr09, cr15, cr16, cr18)
+        _covers(ps_security, cr04, cr05, cr06, cr07, cr08)
+        _covers(ps_impl, cr14, cr17)
+        _covers(ps_pricing, cr12, cr13)
+
+        # Action Items → mitigates → Risks
+        _mitigates(ai_exec, risk_looker)
+        _mitigates(ai_soc2, risk_ciso)
+        _mitigates(ai_migration, risk_looker)
+        _mitigates(ai_poc, risk_poc)
+        _mitigates(ai_pricing, risk_term)
+
+        # ==============================================================
+        # MATRICES
+        # ==============================================================
+
+        # 1. Requirements Coverage Matrix
+        self._matrix(
+            name="Requirements Coverage Matrix",
+            description=(
+                "Traces each customer requirement to the solution components "
+                "that address it, POC scenarios that validate it, and proposal "
+                "sections that cover it."
+            ),
+            columns=[
+                {
+                    "label": "Customer Requirement",
+                    "seed_item_type_slug": "customer-requirement",
+                },
+                {
+                    "label": "Solution Components",
+                    "relation_name": "addresses",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+                {
+                    "label": "POC Scenarios",
+                    "relation_name": "validates",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+                {
+                    "label": "Proposal Sections",
+                    "relation_name": "covers",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 2. POC Validation Matrix
+        self._matrix(
+            name="POC Validation Matrix",
+            description=(
+                "Maps each POC scenario to the customer requirements it validates."
+            ),
+            columns=[
+                {
+                    "label": "POC Scenario",
+                    "seed_item_type_slug": "poc-scenario",
+                },
+                {
+                    "label": "Validated Requirements",
+                    "relation_name": "validates",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 3. Security Compliance Matrix
+        self._matrix(
+            name="Security Compliance Matrix",
+            description=(
+                "Maps each security response to the customer requirements it answers."
+            ),
+            columns=[
+                {
+                    "label": "Security Response",
+                    "seed_item_type_slug": "security-response",
+                },
+                {
+                    "label": "Answered Requirements",
+                    "relation_name": "answers",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 4. Objection Handling Matrix
+        self._matrix(
+            name="Objection Handling Matrix",
+            description=(
+                "Maps each objection to the talking points that counter it."
+            ),
+            columns=[
+                {
+                    "label": "Objection",
+                    "seed_item_type_slug": "objection",
+                },
+                {
+                    "label": "Talking Points",
+                    "relation_name": "counters",
+                    "direction": MatrixSource.Direction.INCOMING,
+                },
+            ],
+        )
+
+        # 5. Competitive Landscape Matrix
+        self._matrix(
+            name="Competitive Landscape Matrix",
+            description=(
+                "Maps each competitor to the solution components they contest."
+            ),
+            columns=[
+                {
+                    "label": "Competitor",
+                    "seed_item_type_slug": "competitor",
+                },
+                {
+                    "label": "Contested Components",
+                    "relation_name": "competes_with",
+                    "direction": MatrixSource.Direction.OUTGOING,
+                },
+            ],
+        )
+
+        # 6. Risk Mitigation Matrix
+        self._matrix(
+            name="Risk Mitigation Matrix",
+            description=(
+                "Maps each risk to the action items that mitigate it."
+            ),
+            columns=[
+                {
+                    "label": "Risk",
+                    "seed_item_type_slug": "risk",
+                },
+                {
+                    "label": "Mitigating Actions",
+                    "relation_name": "mitigates",
                     "direction": MatrixSource.Direction.INCOMING,
                 },
             ],

@@ -1,5 +1,5 @@
 import pytest
-from conftest import ItemFactory, ItemTypeFactory
+from conftest import ItemFactory, ItemTypeFactory, VaultFactory, RelationTypeFactory
 from apps.relations.models import RelationType, ItemRelation
 
 
@@ -82,6 +82,33 @@ class TestRelationCreate:
             "source": str(src.id), "target": str(tgt.id),
         }, format="json")
         assert r.status_code == 403
+
+    def test_cannot_relate_items_from_another_vault(self, editor_client, db):
+        """Source/target items from a foreign vault must be rejected even if the
+        relation type belongs to the active vault."""
+        other_vault = VaultFactory()
+        other_type = ItemTypeFactory(vault=other_vault)
+        src = ItemFactory(item_type=other_type)
+        tgt = ItemFactory(item_type=other_type)
+        foreign_rt = RelationType.objects.get(vault=other_vault, kind="trace")
+        r = editor_client.post(URL, {
+            "relation_type": str(foreign_rt.id),
+            "source": str(src.id), "target": str(tgt.id),
+        }, format="json")
+        assert r.status_code == 400
+
+    def test_cannot_use_relation_type_from_another_vault(self, editor_client, item_type, editor_user, db):
+        """A relation type from a foreign vault must be rejected even when the
+        items belong to the active vault."""
+        other_vault = VaultFactory()
+        foreign_rt = RelationType.objects.get(vault=other_vault, kind="trace")
+        src = ItemFactory(item_type=item_type, created_by=editor_user)
+        tgt = ItemFactory(item_type=item_type, created_by=editor_user)
+        r = editor_client.post(URL, {
+            "relation_type": str(foreign_rt.id),
+            "source": str(src.id), "target": str(tgt.id),
+        }, format="json")
+        assert r.status_code == 400
 
 
 class TestRelationList:

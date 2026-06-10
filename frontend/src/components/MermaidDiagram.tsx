@@ -7,7 +7,10 @@ interface Props {
 
 const MERMAID_CONFIG = {
   startOnLoad: false,
-  securityLevel: "loose" as const,
+  // "strict" sanitizes rendered HTML and disables click/script directives.
+  // Diagram source is user-supplied custom-field content shown to other users,
+  // so a looser level would allow stored XSS.
+  securityLevel: "strict" as const,
   theme: "base" as const,
   themeVariables: {
     // backgrounds

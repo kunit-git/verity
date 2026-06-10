@@ -91,6 +91,27 @@ class ItemRelationSerializer(serializers.ModelSerializer):
         rt = data.get("relation_type")
         source = data.get("source")
         target = data.get("target")
+
+        # Enforce vault isolation: relation_type and both items must belong to
+        # the caller's active vault. Without this, a user could link or relate
+        # items across vaults by passing foreign UUIDs.
+        request = self.context.get("request")
+        vault = getattr(getattr(request, "user", None), "active_vault", None)
+        if vault is None:
+            raise serializers.ValidationError("No active vault selected.")
+        if rt and rt.vault_id != vault.id:
+            raise serializers.ValidationError(
+                {"relation_type": "Relation type does not belong to the active vault."}
+            )
+        if source and source.item_type.vault_id != vault.id:
+            raise serializers.ValidationError(
+                {"source": "Source item does not belong to the active vault."}
+            )
+        if target and target.item_type.vault_id != vault.id:
+            raise serializers.ValidationError(
+                {"target": "Target item does not belong to the active vault."}
+            )
+
         if source and target and source == target:
             raise serializers.ValidationError("An item cannot relate to itself.")
         if rt and source and rt.source_item_type_id:

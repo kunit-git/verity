@@ -264,6 +264,15 @@ class ItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_by", "current_version", "created_at", "updated_at"]
 
+    def validate_item_type(self, value):
+        request = self.context.get("request")
+        vault = getattr(getattr(request, "user", None), "active_vault", None)
+        if vault is None or value.vault_id != vault.id:
+            raise serializers.ValidationError(
+                "Item type does not belong to the active vault."
+            )
+        return value
+
     def _validate_custom_fields(self, item_type, custom_fields_data):
         field_defs = {
             fd.slug: fd

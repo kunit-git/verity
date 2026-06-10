@@ -1,18 +1,21 @@
+from django.core.exceptions import ValidationError
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.accounts.models import SiteSettings
 from apps.items.models import Item
+from apps.vaults.mixins import VaultScopedMixin
+from apps.vaults.permissions import HasVaultAccess
 
 from .document_generator import generate_markdown
 from .models import MailboxArtifact
 from .serializers import MailboxArtifactSerializer, MailboxArtifactDetailSerializer
 
 
-class MailboxViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+class MailboxViewSet(VaultScopedMixin, viewsets.ModelViewSet):
+    permission_classes = [HasVaultAccess]
     http_method_names = ["get", "delete", "post"]
 
     def get_queryset(self):
@@ -42,14 +45,16 @@ class MailboxViewSet(viewsets.ModelViewSet):
                 )
 
         try:
-            item = Item.objects.get(pk=item_id)
-        except Item.DoesNotExist:
+            item = Item.objects.get(
+                pk=item_id, item_type__vault=self.current_vault
+            )
+        except (Item.DoesNotExist, ValueError, ValidationError):
             return Response(
                 {"detail": "Item not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        content = generate_markdown(item_id)
+        content = generate_markdown(item_id, vault=self.current_vault)
         filename = f"{item.title}.md"
 
         artifact = MailboxArtifact.objects.create(

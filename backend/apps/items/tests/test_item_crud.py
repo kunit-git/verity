@@ -92,6 +92,16 @@ class TestItemCreate:
         }, format="json")
         assert r.status_code == 403
 
+    def test_cannot_create_with_item_type_from_another_vault(self, editor_client, db):
+        """Passing an item_type UUID from a different vault must be rejected,
+        preventing cross-vault item creation."""
+        other_vault = VaultFactory()
+        other_type = ItemTypeFactory(vault=other_vault)
+        r = editor_client.post(URL, {
+            "title": "Cross Vault", "item_type": str(other_type.id),
+        }, format="json")
+        assert r.status_code == 400
+
 
 class TestItemDetail:
     def test_get(self, editor_client, item_type, editor_user):

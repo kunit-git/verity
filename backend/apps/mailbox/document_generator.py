@@ -118,10 +118,19 @@ def _render_table_field_markdown(item, field_def):
     return "\n".join(md_lines)
 
 
-def generate_markdown(item_id, max_depth=6):
-    """Recursively walk the composition tree and produce a markdown document."""
+def generate_markdown(item_id, max_depth=6, vault=None):
+    """Recursively walk the composition tree and produce a markdown document.
+
+    If ``vault`` is provided, composition traversal and item lookups are
+    restricted to that vault so a document can never pull in items from
+    another vault.
+    """
     seen = set()
     composition_types = RelationType.objects.filter(kind=RelationType.Kind.COMPOSITION)
+    item_qs = Item.objects.select_related("item_type", "created_by")
+    if vault is not None:
+        composition_types = composition_types.filter(vault=vault)
+        item_qs = item_qs.filter(item_type__vault=vault)
 
     # Cache custom templates keyed by item_type_id
     templates = {
@@ -224,10 +233,7 @@ def generate_markdown(item_id, max_depth=6):
         seen.add(current_id)
 
         try:
-            item = (
-                Item.objects.select_related("item_type", "created_by")
-                .get(pk=current_id)
-            )
+            item = item_qs.get(pk=current_id)
         except Item.DoesNotExist:
             return
 

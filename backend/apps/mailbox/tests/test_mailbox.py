@@ -1,6 +1,13 @@
 import pytest
-from conftest import UserFactory, ItemFactory, MailboxArtifactFactory
+from conftest import (
+    UserFactory,
+    ItemFactory,
+    ItemTypeFactory,
+    VaultFactory,
+    MailboxArtifactFactory,
+)
 from apps.accounts.models import SiteSettings
+from apps.mailbox.models import MailboxArtifact
 from rest_framework.test import APIClient
 
 
@@ -89,3 +96,24 @@ class TestMailboxGenerate:
         for _ in range(3):
             r = editor_client.post(f"{URL}generate/", {"item_id": str(item.id)}, format="json")
             assert r.status_code == 201
+
+    def test_cannot_generate_for_item_in_another_vault(self, editor_client, db):
+        """An editor must not be able to render an item from a vault they are
+        not a member of (cross-vault IDOR)."""
+        other_vault = VaultFactory()
+        other_type = ItemTypeFactory(vault=other_vault)
+        other_item = ItemFactory(item_type=other_type)
+        r = editor_client.post(
+            f"{URL}generate/", {"item_id": str(other_item.id)}, format="json"
+        )
+        assert r.status_code == 404
+        # And nothing should have been written to the mailbox.
+        assert not MailboxArtifact.objects.filter(source_item=other_item).exists()
+
+    def test_generate_requires_active_vault(self, api_client, db):
+        """A user with no active vault cannot generate documents."""
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        item = ItemFactory()
+        r = api_client.post(f"{URL}generate/", {"item_id": str(item.id)}, format="json")
+        assert r.status_code == 403

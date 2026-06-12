@@ -4,9 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Setup
 
-PostgreSQL must be running (via Docker) before starting the backend:
+### Full stack via Docker
+
+`docker compose up` builds and runs three containers: `db` (PostgreSQL),
+`backend` (Django on port 8000), and `frontend` (Vite dev server on port 5173,
+proxying `/api` to the backend). The backend entrypoint waits for the DB,
+applies migrations, seeds built-in relation types, and provisions the admin
+user (`admin` / `admin` by default — override with `DJANGO_SUPERUSER_*`).
+The web app is then available at <http://localhost:5173>.
+
 ```bash
-docker-compose up -d
+docker compose up -d --build         # start db + backend
+docker compose logs -f backend       # follow startup / migration output
+```
+
+To trigger a destructive reset, set a flag for a single `up` (it defaults
+to off):
+```bash
+RECREATE_DB=1 docker compose up -d backend       # drop + recreate DB, migrate, seed, admin
+RECREATE_ADMIN=1 docker compose up -d backend     # delete + recreate just the admin user
+LOAD_EXAMPLE=1 docker compose up -d backend       # also load the six demo vaults (populate_example)
+```
+
+The admin command is also available standalone: `python manage.py ensure_admin [--recreate]`.
+
+### DB-only (running the backend on the host)
+
+To run just PostgreSQL in Docker and the backend natively:
+```bash
+docker compose up -d db
 ```
 
 **Backend** (Django, runs on port 8000):

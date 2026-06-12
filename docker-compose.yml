@@ -9,6 +9,58 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verity -d verity"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source for live reload in development.
+      - ./backend:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: verity.settings.development
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: verity
+      DB_USER: verity
+      DB_PASSWORD: verity_dev
+      # Destructive reset triggers — default off. Set to 1 on the host to
+      # act on the next `up`, e.g.  RECREATE_DB=1 docker compose up backend
+      RECREATE_DB: ${RECREATE_DB:-0}
+      RECREATE_ADMIN: ${RECREATE_ADMIN:-0}
+      # Load the six demo vaults on startup (wipes + rebuilds just those vaults).
+      LOAD_EXAMPLE: ${LOAD_EXAMPLE:-0}
+      # Admin account provisioned on startup.
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@example.com}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-admin}
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source for live reload, but keep the image's own node_modules
+      # (built for Linux) instead of the host's.
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # Proxy /api to the backend container, and poll for file changes so
+      # hot reload works over a bind mount on macOS/Windows.
+      VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_USE_POLLING: "true"
 
 volumes:
   pgdata:

@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsSiteAdmin
 from .models import Vault, VaultAuditLog, VaultMembership
-from .permissions import IsVaultAdmin, IsVaultAdminForVault
+from .permissions import IsVaultAdminForVault
 from .serializers import (
     VaultSerializer,
     VaultMembershipSerializer,
@@ -51,7 +51,7 @@ class VaultDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class VaultMemberListView(generics.ListCreateAPIView):
     serializer_class = VaultMembershipSerializer
-    permission_classes = [IsSiteAdmin | IsVaultAdmin]
+    permission_classes = [IsVaultAdminForVault]
     pagination_class = None
 
     def get_queryset(self):
@@ -86,7 +86,7 @@ class VaultMemberListView(generics.ListCreateAPIView):
 
 class VaultMemberDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = VaultMembershipSerializer
-    permission_classes = [IsSiteAdmin | IsVaultAdmin]
+    permission_classes = [IsVaultAdminForVault]
 
     def get_queryset(self):
         return VaultMembership.objects.filter(
@@ -218,7 +218,7 @@ class VaultUnlockView(APIView):
 
 class VaultAuditLogView(generics.ListAPIView):
     serializer_class = VaultAuditLogSerializer
-    permission_classes = [IsSiteAdmin | IsVaultAdmin]
+    permission_classes = [IsVaultAdminForVault]
 
     def get_queryset(self):
         return VaultAuditLog.objects.filter(

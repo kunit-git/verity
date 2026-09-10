@@ -128,6 +128,8 @@ function makeComponents(renderField: FieldRenderer) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const comps: Record<string, (props: any) => ReactNode> = {};
   for (const tag of tags) {
+    // The markdown AST node is intentionally excluded from DOM props.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     comps[tag] = ({ node: _node, children, ...rest }) => (
       <Wrap as={tag} {...rest}>{children}</Wrap>
     );
@@ -304,7 +306,9 @@ export default function DocumentEditorPage() {
   });
   const compositionTypeId = relationTypes.find((rt) => rt.kind === "composition")?.id;
 
-  useEffect(() => {
+  const [previousData, setPreviousData] = useState<typeof data>(undefined);
+  if (data !== previousData) {
+    setPreviousData(data);
     if (data) {
       setEditState((prev) => {
         const next: EditState = {};
@@ -314,7 +318,7 @@ export default function DocumentEditorPage() {
         return next;
       });
     }
-  }, [data]);
+  }
 
   const dirtyCount = Object.values(editState).filter((e) => e.isDirty && !e.isMarkedForDeletion).length;
   const deletionCount = Object.values(editState).filter((e) => e.isMarkedForDeletion).length;
@@ -399,7 +403,7 @@ export default function DocumentEditorPage() {
     if (!data) return;
     const config = getInsertConfig(data.items, afterRealIdx);
     if (!config) return;
-    const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const clientId = `pending-${crypto.randomUUID()}`;
     setPendingItems((prev) => [
       ...prev,
       { clientId, ...config, itemTypeId, itemTypeName, values: { title: "", description: "", status: "draft", custom_fields: {} }, saveError: null },

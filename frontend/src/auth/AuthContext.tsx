@@ -28,7 +28,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !!localStorage.getItem("access_token"));
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -42,8 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         })
         .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
     }
   }, []);
 
@@ -83,6 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// This module intentionally co-locates its provider and consumer hook.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

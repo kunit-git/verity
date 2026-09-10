@@ -141,7 +141,8 @@ class ChatView(VaultScopedMixin, APIView):
     permission_classes = [HasVaultAccess]
 
     def post(self, request, pk):
-        conversation = Conversation.objects.get(
+        conversation = generics.get_object_or_404(
+            Conversation,
             pk=pk, user=request.user, vault=self.current_vault,
         )
         serializer = ChatInputSerializer(data=request.data)
@@ -336,9 +337,12 @@ class PendingActionAcceptView(VaultScopedMixin, APIView):
 
     permission_classes = [HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked]
 
+    @transaction.atomic
     def post(self, request, pk):
-        action = PendingAction.objects.select_related("conversation").get(
-            pk=pk, conversation__vault=self.current_vault
+        action = generics.get_object_or_404(
+            PendingAction.objects.select_for_update().select_related("conversation"),
+            pk=pk, conversation__vault=self.current_vault,
+            conversation__user=request.user,
         )
         if action.status != PendingAction.Status.PENDING:
             return Response(
@@ -347,7 +351,8 @@ class PendingActionAcceptView(VaultScopedMixin, APIView):
             )
 
         try:
-            result = _execute_pending_action(action, request)
+            with transaction.atomic():
+                result = _execute_pending_action(action, request)
             action.status = PendingAction.Status.EXECUTED
             action.result = result
         except Exception as e:
@@ -364,8 +369,10 @@ class PendingActionRejectView(VaultScopedMixin, APIView):
 
     permission_classes = [HasVaultAccess]
 
+    @transaction.atomic
     def post(self, request, pk):
-        action = PendingAction.objects.select_related("conversation").get(
+        action = generics.get_object_or_404(
+            PendingAction.objects.select_for_update().select_related("conversation"),
             pk=pk,
             conversation__vault=self.current_vault,
             conversation__user=request.user,

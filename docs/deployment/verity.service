@@ -1,0 +1,17 @@
+[Unit]
+Description=Verity API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=verity
+Group=verity
+WorkingDirectory=/opt/verity/backend
+Environment=DJANGO_SETTINGS_MODULE=verity.settings.production
+ExecStart=/opt/verity/.venv/bin/gunicorn verity.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 180 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from .formula import validate_formula
@@ -59,6 +60,25 @@ class MatrixSourceWriteSerializer(serializers.Serializer):
 
     def validate(self, data):
         kind = data.get("kind")
+        # Resolve references before any writes, and only within the active vault.
+        from apps.items.models import Item, ItemType
+        from apps.relations.models import RelationType
+
+        vault = self.context["request"].user.active_vault
+        references = {
+            "seed_item_type": ItemType.objects.filter(vault=vault),
+            "seed_container": Item.objects.filter(item_type__vault=vault),
+            "relation_type": RelationType.objects.filter(vault=vault),
+        }
+        for field, queryset in references.items():
+            if data.get(field) is not None:
+                obj = queryset.filter(pk=data[field]).first()
+                if obj is None:
+                    raise serializers.ValidationError(
+                        {field: "Object does not exist in the active vault."}
+                    )
+                data[field] = obj
+
         seed_item_type = data.get("seed_item_type")
         relation_type = data.get("relation_type")
         direction = data.get("direction")
@@ -241,33 +261,7 @@ class MatrixWriteSerializer(serializers.ModelSerializer):
 
         return data
 
-    def _resolve_fks(self, source_data):
-        """Resolve UUID fields to FK objects for MatrixSource creation."""
-        from apps.items.models import Item, ItemType
-        from apps.relations.models import RelationType
-
-        result = dict(source_data)
-
-        seed_item_type = result.pop("seed_item_type", None)
-        if seed_item_type:
-            result["seed_item_type"] = ItemType.objects.get(id=seed_item_type)
-        else:
-            result["seed_item_type"] = None
-
-        seed_container = result.pop("seed_container", None)
-        if seed_container:
-            result["seed_container"] = Item.objects.get(id=seed_container)
-        else:
-            result["seed_container"] = None
-
-        relation_type = result.pop("relation_type", None)
-        if relation_type:
-            result["relation_type"] = RelationType.objects.get(id=relation_type)
-        else:
-            result["relation_type"] = None
-
-        return result
-
+    @transaction.atomic
     def create(self, validated_data):
         sources_data = validated_data.pop("sources")
         columns_data = validated_data.pop("columns")
@@ -276,8 +270,7 @@ class MatrixWriteSerializer(serializers.ModelSerializer):
         matrix = Matrix.objects.create(**validated_data)
 
         for position, src_data in enumerate(sources_data):
-            resolved = self._resolve_fks(src_data)
-            MatrixSource.objects.create(matrix=matrix, position=position, **resolved)
+            MatrixSource.objects.create(matrix=matrix, position=position, **src_data)
 
         for position, col_data in enumerate(columns_data):
             MatrixDisplayColumn.objects.create(
@@ -289,6 +282,7 @@ class MatrixWriteSerializer(serializers.ModelSerializer):
 
         return matrix
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         sources_data = validated_data.pop("sources", None)
         columns_data = validated_data.pop("columns", None)
@@ -300,8 +294,7 @@ class MatrixWriteSerializer(serializers.ModelSerializer):
         if sources_data is not None:
             instance.sources.all().delete()
             for position, src_data in enumerate(sources_data):
-                resolved = self._resolve_fks(src_data)
-                MatrixSource.objects.create(matrix=instance, position=position, **resolved)
+                MatrixSource.objects.create(matrix=instance, position=position, **src_data)
 
         if columns_data is not None:
             instance.display_columns.all().delete()

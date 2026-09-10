@@ -8,5 +8,12 @@ htmlcov/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.dump
+*.sql
+backups/
 *.env.local
 .DS_Store

@@ -97,22 +97,6 @@ export default function AgentPanel({ onClose, contextItemId }: Props) {
     setShowConversationList(false);
   }, [contextItemId, createMutation]);
 
-  const handleSend = useCallback(() => {
-    if (!input.trim() || streaming) return;
-    if (!activeConversationId) {
-      // Create conversation first, then send
-      const payload: { title?: string; context_item?: string } = {};
-      if (contextItemId) payload.context_item = contextItemId;
-      agentApi.createConversation(payload).then((conv) => {
-        setActiveConversationId(conv.id);
-        queryClient.invalidateQueries({ queryKey: ["agent-conversations"] });
-        sendMessage(conv.id, input.trim());
-      });
-      return;
-    }
-    sendMessage(activeConversationId, input.trim());
-  }, [input, streaming, activeConversationId, contextItemId, queryClient]);
-
   const sendMessage = (convId: string, message: string) => {
     setInput("");
     setStreaming(true);
@@ -134,6 +118,22 @@ export default function AgentPanel({ onClose, contextItemId }: Props) {
         refetchConversation();
       },
     });
+  };
+
+  const handleSend = () => {
+    if (!input.trim() || streaming) return;
+    if (!activeConversationId) {
+      // Create conversation first, then send
+      const payload: { title?: string; context_item?: string } = {};
+      if (contextItemId) payload.context_item = contextItemId;
+      agentApi.createConversation(payload).then((conv) => {
+        setActiveConversationId(conv.id);
+        queryClient.invalidateQueries({ queryKey: ["agent-conversations"] });
+        sendMessage(conv.id, input.trim());
+      });
+      return;
+    }
+    sendMessage(activeConversationId, input.trim());
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

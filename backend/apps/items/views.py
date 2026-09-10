@@ -32,6 +32,7 @@ class ItemTypeViewSet(VaultScopedMixin, viewsets.ModelViewSet):
                 Prefetch("custom_fields", queryset=CustomFieldDefinition.objects.all())
             )
             .annotate(item_count=Count("items", filter=Q(items__is_deleted=False)))
+            .order_by("name", "pk")
         )
 
     def get_serializer_class(self):

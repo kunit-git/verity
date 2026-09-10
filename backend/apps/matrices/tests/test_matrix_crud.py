@@ -1,5 +1,5 @@
 import pytest
-from conftest import ItemTypeFactory, ItemFactory
+from conftest import ItemTypeFactory, ItemFactory, RelationTypeFactory
 from apps.relations.models import RelationType
 
 
@@ -24,6 +24,48 @@ def _display_col(heading, source):
 
 
 class TestMatrixCreate:
+    @pytest.mark.parametrize("field", ["seed_item_type", "seed_container", "relation_type"])
+    @pytest.mark.parametrize("missing", [False, True])
+    def test_rejects_foreign_or_missing_references(self, editor_client, item_type, field, missing):
+        from uuid import uuid4
+        from apps.matrices.models import Matrix
+
+        foreign = {
+            "seed_item_type": ItemTypeFactory,
+            "seed_container": ItemFactory,
+            "relation_type": RelationTypeFactory,
+        }
+        reference = uuid4() if missing else foreign[field]().pk
+        seed = _seed_source(item_type.id)
+        sources = [seed]
+        if field == "relation_type":
+            sources.append(_traversal_source(reference))
+        else:
+            seed[field] = str(reference)
+        count = Matrix.objects.count()
+        response = editor_client.post(URL, {
+            "name": "Invalid references", "sources": sources,
+            "columns": [_display_col("Items", "seed")],
+        }, format="json")
+        assert response.status_code == 400
+        assert Matrix.objects.count() == count
+
+    def test_invalid_update_preserves_existing_sources(self, editor_client, item_type):
+        from apps.matrices.models import Matrix
+
+        payload = {"name": "Original", "sources": [_seed_source(item_type.id)],
+                   "columns": [_display_col("Items", "seed")]}
+        created = editor_client.post(URL, payload, format="json")
+        matrix = Matrix.objects.get(pk=created.data["id"])
+        source_ids = list(matrix.sources.values_list("id", flat=True))
+        payload["name"] = "Changed"
+        payload["sources"] = [_seed_source(ItemTypeFactory().pk)]
+        response = editor_client.put(f"{URL}{matrix.pk}/", payload, format="json")
+        assert response.status_code == 400
+        matrix.refresh_from_db()
+        assert matrix.name == "Original"
+        assert list(matrix.sources.values_list("id", flat=True)) == source_ids
+
     def test_create_with_seed_source(self, editor_client, item_type, vault):
         r = editor_client.post(URL, {
             "name": "Test Matrix",

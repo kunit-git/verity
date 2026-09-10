@@ -7,6 +7,21 @@ URL = "/api/v1/auth/settings/"
 
 
 class TestSiteSettingsGet:
+    def test_public_settings_hide_provider_configuration(self, api_client, site_settings):
+        site_settings.ai_api_url = "https://internal.example.com/api"
+        site_settings.ai_api_key = "test-only-key"
+        site_settings.save()
+        response = api_client.get(URL)
+        assert set(response.data) == {"registration_enabled", "mailbox_limit", "ai_enabled"}
+
+    def test_admin_sees_configuration_but_not_key(self, site_admin_client, site_settings):
+        site_settings.ai_api_key = "test-only-key"
+        site_settings.save()
+        response = site_admin_client.get(URL)
+        assert "ai_api_url" in response.data
+        assert response.data["ai_api_key_set"] is True
+        assert "ai_api_key" not in response.data
+
     def test_anonymous_can_read(self, api_client, site_settings):
         r = api_client.get(URL)
         assert r.status_code == 200

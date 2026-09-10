@@ -7,6 +7,15 @@ User = get_user_model()
 SETUP_URL = "/api/v1/auth/setup/"
 
 
+@pytest.fixture(autouse=True)
+def clear_setup_throttle():
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 class TestSetupStatus:
     def test_returns_setup_required_when_no_admins(self, api_client, db):
         r = api_client.get(SETUP_URL)
@@ -27,6 +36,19 @@ class TestSetupStatus:
 
 
 class TestSetupCreate:
+    @pytest.mark.parametrize("payload", [
+        {"username": None, "password": "securepass1"},
+        {"username": [], "password": "securepass1"},
+        {"username": "invalid username", "password": "securepass1"},
+        {"username": "a" * 151, "password": "securepass1"},
+        {"username": "admin", "password": None},
+        {"username": "admin", "password": []},
+    ])
+    def test_malformed_input_returns_400(self, api_client, db, payload):
+        response = api_client.post(SETUP_URL, payload, format="json")
+        assert response.status_code == 400
+        assert not User.objects.filter(is_site_admin=True).exists()
+
     def test_creates_admin_when_none_exist(self, api_client, db):
         r = api_client.post(
             SETUP_URL,
@@ -89,3 +111,32 @@ class TestSetupCreate:
         )
         assert r.status_code == 200
         assert "access" in r.data
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_setup_creates_only_one_admin():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from django.db import close_old_connections
+    from rest_framework.test import APIClient
+    from apps.accounts.models import SiteSettings
+
+    SiteSettings.get()
+    barrier = Barrier(2)
+
+    def create_admin(username):
+        close_old_connections()
+        try:
+            barrier.wait(timeout=10)
+            return APIClient().post(
+                SETUP_URL,
+                {"username": username, "password": "securepass1"},
+                format="json",
+            ).status_code
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(create_admin, ["firstadmin", "secondadmin"]))
+    assert sorted(statuses) == [201, 409]
+    assert User.objects.filter(is_site_admin=True).count() == 1

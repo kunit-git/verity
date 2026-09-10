@@ -41,14 +41,14 @@ class VaultNotLocked(BasePermission):
 
 
 class IsVaultAdminForVault(BasePermission):
-    """Admin within a specific vault identified by URL pk (or site admin)."""
+    """Admin within the vault identified by the URL (or site admin)."""
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
         if request.user.is_site_admin:
             return True
-        vault_id = view.kwargs.get("pk")
+        vault_id = view.kwargs.get("vault_id", view.kwargs.get("pk"))
         if vault_id is None:
             return False
         return VaultMembership.objects.filter(

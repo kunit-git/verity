@@ -36,7 +36,8 @@ deadline = time.time() + 60
 while True:
     try:
         psycopg.connect(
-            f"host={host} port={port} user={user} password={password} dbname=postgres"
+            host=host, port=port, user=user, password=password, dbname="postgres",
+            connect_timeout=5,
         ).close()
         break
     except Exception as exc:  # noqa: BLE001
@@ -59,8 +60,10 @@ fi
 if is_true "${RECREATE_ADMIN:-0}"; then
     echo "RECREATE_ADMIN set — recreating the admin user..."
     python manage.py ensure_admin --recreate
-else
+elif [[ -n "${DJANGO_SUPERUSER_PASSWORD:-}" ]]; then
     python manage.py ensure_admin
+else
+    echo "No admin password configured. Complete first-admin setup in the local web app."
 fi
 
 if is_true "${LOAD_EXAMPLE:-0}"; then

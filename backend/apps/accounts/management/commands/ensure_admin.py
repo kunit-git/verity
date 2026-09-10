@@ -1,10 +1,11 @@
 """
 Management command: ensure_admin
 
-Idempotently provision the site admin user. On a fresh database the
-container entrypoint calls this so there is always an account to log in
-with. Re-running is safe: an existing admin is left in place (its
-password is refreshed only when --recreate is passed).
+Idempotently provision a site admin using an explicitly supplied password.
+The container entrypoint calls this only when a provisioning password is set;
+otherwise use initial browser setup. An existing admin retains its password.
+--recreate deletes and recreates the account and can fail on protected references.
+Use Django changepassword for ordinary password recovery.
 
 Credentials default to the standard ``DJANGO_SUPERUSER_*`` environment
 variables so the same config drives ``createsuperuser`` and this command.
@@ -39,7 +40,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--password",
-            default=os.environ.get("DJANGO_SUPERUSER_PASSWORD", "admin"),
+            default=os.environ.get("DJANGO_SUPERUSER_PASSWORD", ""),
             help="Admin password (default: $DJANGO_SUPERUSER_PASSWORD).",
         )
         parser.add_argument(
@@ -60,6 +61,12 @@ class Command(BaseCommand):
             )
 
         existing = User.objects.filter(username=username).first()
+
+        if existing and not existing.is_site_admin:
+            raise CommandError(
+                "An account with this username already exists and is not a site admin. "
+                "Choose another username; existing users are never promoted automatically."
+            )
 
         if existing and options["recreate"]:
             existing.delete()

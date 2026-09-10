@@ -1,8 +1,8 @@
 """
 Management command: purge_data
 
-Hard-deletes all user data from the database, then runs seed_data to
-re-create the admin user, default vault, and built-in relation types.
+Hard-deletes user/content records, then runs seed_data for remaining vaults.
+This does not recreate a site admin or an initial vault. SiteSettings is retained.
 
 Usage:
     python manage.py purge_data

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,6 +19,7 @@ import type {
   TableDisplayColumnPayload,
   RelationType,
   SourceKind,
+  Table,
 } from "../types";
 
 type EditorMode = "visual" | "text";
@@ -93,15 +94,21 @@ function validateJson(parsed: unknown): {
 
 export default function TableEditorPage() {
   const { id } = useParams<{ id: string }>();
+  const { data: existingTable, isError } = useQuery({
+    queryKey: ["table", id],
+    queryFn: () => getTable(id!),
+    enabled: !!id,
+  });
+  if (id && isError) return <p className="p-6 text-red-600">Unable to load table.</p>;
+  if (id && !existingTable) return <p className="p-6">Loading table…</p>;
+  return <TableEditor key={id ?? "new"} id={id} existingTable={existingTable} />;
+}
+
+function TableEditor({ id, existingTable }: { id?: string; existingTable?: Table }) {
   const isEdit = !!id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: existingTable } = useQuery({
-    queryKey: ["table", id],
-    queryFn: () => getTable(id!),
-    enabled: isEdit,
-  });
   const { data: itemTypes } = useQuery({
     queryKey: ["itemTypes"],
     queryFn: getItemTypes,
@@ -111,10 +118,19 @@ export default function TableEditorPage() {
     queryFn: getRelationTypes,
   });
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [sources, setSources] = useState<TableSourcePayload[]>([]);
-  const [displayColumns, setDisplayColumns] = useState<TableDisplayColumnPayload[]>([]);
+  const [name, setName] = useState(existingTable?.name ?? "");
+  const [description, setDescription] = useState(existingTable?.description ?? "");
+  const [sources, setSources] = useState<TableSourcePayload[]>(() =>
+    existingTable?.sources.map((s) => ({
+      name: s.name, kind: s.kind, seed_item_type: s.seed_item_type,
+      seed_container: s.seed_container, relation_type: s.relation_type,
+      direction: s.direction, formula: s.formula, source_ref: s.source_ref,
+      field_slug: s.field_slug,
+    })) ?? []
+  );
+  const [displayColumns, setDisplayColumns] = useState<TableDisplayColumnPayload[]>(() =>
+    existingTable?.columns.map((c) => ({ heading: c.heading, source: c.source })) ?? []
+  );
   const [error, setError] = useState("");
 
   // Editor mode: visual or text (JSON)
@@ -122,32 +138,6 @@ export default function TableEditorPage() {
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState("");
   const [jsonRevertSnapshot, setJsonRevertSnapshot] = useState("");
-
-  useEffect(() => {
-    if (existingTable) {
-      setName(existingTable.name);
-      setDescription(existingTable.description);
-      setSources(
-        existingTable.sources.map((s) => ({
-          name: s.name,
-          kind: s.kind,
-          seed_item_type: s.seed_item_type,
-          seed_container: s.seed_container,
-          relation_type: s.relation_type,
-          direction: s.direction,
-          formula: s.formula,
-          source_ref: s.source_ref,
-          field_slug: s.field_slug,
-        }))
-      );
-      setDisplayColumns(
-        existingTable.columns.map((c) => ({
-          heading: c.heading,
-          source: c.source,
-        }))
-      );
-    }
-  }, [existingTable]);
 
   // ---- Source management ----
 

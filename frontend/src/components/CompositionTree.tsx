@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInfiniteQuery, useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronRight, ChevronDown, ChevronUp, TreePine, AlertTriangle } from "lucide-react";
@@ -27,7 +27,9 @@ export default function CompositionTree({ currentItemId }: Props) {
     enabled: !!currentItemId && currentItemId !== "new",
   });
 
-  useEffect(() => {
+  const [previousAncestors, setPreviousAncestors] = useState<typeof ancestors>(undefined);
+  if (ancestors !== previousAncestors) {
+    setPreviousAncestors(ancestors);
     if (ancestors && ancestors.length > 0) {
       setExpandedNodes((prev) => {
         const next = new Set(prev);
@@ -35,7 +37,7 @@ export default function CompositionTree({ currentItemId }: Props) {
         return next;
       });
     }
-  }, [ancestors]);
+  }
 
   // Scroll current item into view
   useEffect(() => {
@@ -276,7 +278,7 @@ function ChildNodes({
       initialPageParam: 1,
     });
 
-  const children = data?.pages.flatMap((p) => p.results) ?? [];
+  const children = useMemo(() => data?.pages.flatMap((p) => p.results) ?? [], [data]);
 
   const reorderMutation = useMutation({
     mutationFn: (childIds: string[]) => reorderChildren(parentId, childIds),

@@ -13,7 +13,7 @@ const usePolling = process.env.VITE_USE_POLLING === 'true'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    host: true,
+    host: '127.0.0.1',
     port: 5173,
     watch: usePolling ? { usePolling: true } : undefined,
     proxy: {

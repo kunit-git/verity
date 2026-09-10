@@ -32,7 +32,10 @@ class SiteSettingsView(APIView):
         return [IsSiteAdmin()]
 
     def get(self, request):
-        return Response(SiteSettingsSerializer(SiteSettings.get()).data)
+        data = SiteSettingsSerializer(SiteSettings.get()).data
+        if not (request.user.is_authenticated and request.user.is_site_admin):
+            data = {key: data[key] for key in ("registration_enabled", "mailbox_limit", "ai_enabled")}
+        return Response(data)
 
     def patch(self, request):
         settings = SiteSettings.get()
@@ -67,33 +70,21 @@ class InitialSetupView(APIView):
         return Response({"setup_required": setup_required})
 
     def post(self, request):
-        username = request.data.get("username", "").strip()
-        password = request.data.get("password", "")
-
-        errors = {}
-        if not username:
-            errors["username"] = ["This field is required."]
-        if len(password) < 8:
-            errors["password"] = ["Password must be at least 8 characters."]
-        if errors:
-            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-
         try:
+            SiteSettings.get()
             with transaction.atomic():
-                # Re-verify inside the transaction to close the race window.
+                # A transaction alone does not serialize concurrent setup requests.
+                # Lock the singleton even when there are no users to lock yet.
+                SiteSettings.objects.select_for_update().get(pk=1)
                 if User.objects.filter(is_site_admin=True).exists():
                     return Response(
                         {"detail": "Setup already completed. An admin account already exists."},
                         status=status.HTTP_409_CONFLICT,
                     )
-                if User.objects.filter(username=username).exists():
-                    return Response(
-                        {"username": ["A user with this username already exists."]},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+                serializer = RegisterSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
                 User.objects.create_user(
-                    username=username,
-                    password=password,
+                    **serializer.validated_data,
                     is_site_admin=True,
                     is_staff=True,
                     is_superuser=True,

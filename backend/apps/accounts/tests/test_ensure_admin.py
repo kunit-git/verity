@@ -27,14 +27,15 @@ def test_idempotent_keeps_existing_password():
     assert User.objects.filter(username="root").count() == 1
 
 
-def test_restores_privileges_on_existing_user(django_user_model):
+def test_refuses_to_promote_existing_user(django_user_model):
     django_user_model.objects.create_user(username="root", password="pw")
 
-    call_command("ensure_admin", username="root", password="pw")
+    with pytest.raises(CommandError, match="never promoted automatically"):
+        call_command("ensure_admin", username="root", password="pw")
 
     user = User.objects.get(username="root")
-    assert user.is_superuser
-    assert user.is_site_admin
+    assert not user.is_superuser
+    assert not user.is_site_admin
 
 
 def test_recreate_resets_password():
@@ -49,3 +50,10 @@ def test_recreate_resets_password():
 def test_empty_password_raises():
     with pytest.raises(CommandError):
         call_command("ensure_admin", username="root", password="")
+
+
+def test_no_default_admin_password(monkeypatch):
+    monkeypatch.delenv("DJANGO_SUPERUSER_PASSWORD", raising=False)
+    with pytest.raises(CommandError, match="No admin password"):
+        call_command("ensure_admin")
+    assert not User.objects.exists()

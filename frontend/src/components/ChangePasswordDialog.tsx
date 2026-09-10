@@ -1,3 +1,4 @@
+import { isAxiosError } from "axios";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { X } from "lucide-react";
@@ -29,8 +30,8 @@ export default function ChangePasswordDialog({ targetUser, onClose }: Props) {
       setSuccess(true);
       setError("");
     },
-    onError: (err: any) => {
-      const data = err?.response?.data;
+    onError: (err: unknown) => {
+      const data = isAxiosError<Record<string, string[]>>(err) ? err.response?.data : undefined;
       if (data?.current_password) {
         setError(data.current_password[0]);
       } else if (data?.new_password) {

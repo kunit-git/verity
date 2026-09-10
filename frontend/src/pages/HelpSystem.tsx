@@ -658,6 +658,8 @@ const ROUTE_TOPIC_MAP: { pattern: RegExp; topicId: string }[] = [
   { pattern: /^\/items\/[^/]+/, topicId: "navigator" },
 ];
 
+// Consumer hook shares the component module; edits may trigger a full reload.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useHelpTopicId(): string | null {
   const location = useLocation();
   for (const { pattern, topicId } of ROUTE_TOPIC_MAP) {

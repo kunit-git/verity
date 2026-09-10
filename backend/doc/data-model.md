@@ -1,203 +1,140 @@
-# Verity Data Model & Permissions
-
-This document describes the permission system, role hierarchy, and core data model concepts used throughout the Verity backend.
-
----
-
-## Table of Contents
-
-1. [Permissions & Roles](#permissions--roles)
-2. [Vault Locking](#vault-locking)
-3. [Soft Delete](#soft-delete)
-4. [Versioning & Suspect Links](#versioning--suspect-links)
-5. [Composition vs Trace Relations](#composition-vs-trace-relations)
-
----
-
-## Permissions & Roles
-
-### Role Hierarchy
-
-| Role        | Scope  | Capabilities                                               |
-|-------------|--------|------------------------------------------------------------|
-| Site Admin  | Global | Full system access: manage users, vaults, all data         |
-| Vault Admin | Vault  | Manage vault members, lock/unlock vault, view audit logs   |
-| Editor      | Vault  | Create, update, delete items, relations, matrices          |
-| Viewer      | Vault  | Read-only access to all vault data                         |
-
-Site Admin is a global flag on the user account (`is_site_admin`). The other three roles are per-vault, assigned through vault membership.
-
-### Permission Classes
-
-The backend uses the following Django REST Framework permission classes to enforce access control:
-
-| Class               | Behavior                                                        |
-|---------------------|-----------------------------------------------------------------|
-| `IsSiteAdmin`       | Only site administrators                                        |
-| `HasVaultAccess`    | User must have an active vault and be a member (or site admin)  |
-| `ReadOnlyOrEditor`  | Viewers: GET/HEAD/OPTIONS only; Editors/Admins: all methods     |
-| `VaultNotLocked`    | Read operations always pass; write operations blocked if vault is locked |
-| `IsVaultAdmin`      | User's role in active vault must be `admin`                     |
-
-Most vault-scoped endpoints combine multiple classes. The typical stack is:
-
-```
-HasVaultAccess, ReadOnlyOrEditor, VaultNotLocked
-```
-
-This ensures the user belongs to the vault, has the right role for the HTTP method, and the vault is not locked for write operations.
-
-### How Roles Are Resolved
-
-1. **Site Admin** — checked via `User.is_site_admin`. Site admins bypass vault membership checks and can access all vaults.
-2. **Vault Role** — determined by the `VaultMembership` record linking the user to their active vault. The `role` field holds `viewer`, `editor`, or `admin`.
-3. **Active Vault** — each user has an `active_vault` field. All vault-scoped API requests operate against this vault. Users switch vaults via `POST /api/v1/vaults/select/`.
-
----
-
-## Vault Locking
-
-Vaults can be locked to prevent all write operations while preserving read access.
-
-When a vault is locked:
-
-- All read operations (GET, HEAD, OPTIONS) continue to work normally
-- All write operations (POST, PATCH, DELETE) on vault-scoped resources are blocked with a `403 Forbidden` response
-- Only Site Admins or Vault Admins can lock/unlock a vault
-
-Locking is tracked on the vault record:
-
-| Field              | Type          | Description                          |
-|--------------------|---------------|--------------------------------------|
-| `is_locked`        | boolean       | Whether the vault is currently locked |
-| `locked_at`        | datetime/null | When the vault was locked            |
-| `locked_by`        | user/null     | Who locked the vault                 |
-
-Lock and unlock events are recorded in the vault's audit log.
-
----
-
-## Soft Delete
-
-All models use soft deletion. Records are never permanently removed from the database. Instead:
-
-- `is_deleted` is set to `true`
-- `deleted_at` is set to the current timestamp
-
-### Managers
-
-| Manager        | Behavior                          |
-|----------------|-----------------------------------|
-| `objects`      | Default — excludes deleted records |
-| `all_objects`  | Includes deleted records          |
-
-### Cascade Behavior
-
-Deletion cascades through related models:
-
-- **Item** → soft-deletes its `ItemVersion` records, `CustomFieldValue` records, and `ItemRelation` records
-- **ItemType** → soft-deletes its `CustomFieldDefinition` records
-- **Vault** → soft-deletes all contained data
-- **User** → soft-deleted (account status set to `deleted`)
-
----
-
-## Versioning & Suspect Links
-
-### Item Versioning
-
-Every `Item` has a `current_version` counter starting at 1. Each update to an item follows this sequence:
-
-1. A `PATCH` request arrives for the item
-2. An `ItemVersion` snapshot is created capturing the **pre-update** state (title, description, status, custom fields)
-3. The update is applied to the item
-4. `current_version` is incremented
-
-Version snapshots preserve the complete item state at each point in time, enabling full audit history.
-
-### Suspect Link Detection
-
-Relations track the version of each linked item at the time the relation was last confirmed:
-
-| Field            | Description                                                |
-|------------------|------------------------------------------------------------|
-| `source_version` | Version of the source item when the relation was confirmed |
-| `target_version` | Version of the target item when the relation was confirmed |
-
-A relation becomes **suspect** when either stored version falls behind the linked item's current version — meaning one side was edited after the relation was last confirmed.
-
-**Example:**
-
-```
-Relation created:  source_version=2, target_version=1
-Source item edited: source.current_version becomes 3
-→ Relation is now suspect (source_version 2 < current_version 3)
-```
-
-### Confirming Relations
-
-Users confirm a suspect relation via `POST /api/v1/relations/{id}/confirm/`, which:
-
-- Resets `source_version` to the source item's `current_version`
-- Resets `target_version` to the target item's `current_version`
-- Optionally accepts explicit version numbers or sets `version_pinned` to `true`
-
-### Navigation Suspect Flags
-
-The navigation endpoint (`GET /api/v1/items/{id}/navigation/`) surfaces suspect status per relation:
-
-| Field                 | Description                                                    |
-|-----------------------|----------------------------------------------------------------|
-| `is_suspect`          | `true` if either side changed since the relation was confirmed |
-| `other_changed`       | `true` if the other item was edited after relation confirmed   |
-| `self_changed`        | `true` if the current item was edited after relation confirmed |
-| `pinned_version`      | The version of the *other* item stored on the relation         |
-| `current_version`     | The *other* item's current version                             |
-| `self_pinned_version` | The version of the *current* item stored on the relation       |
-| `self_current_version`| The *current* item's current version                           |
-| `is_version_pinned`   | `true` if the user explicitly pinned the relation to a version |
-
----
-
-## Composition vs Trace Relations
-
-Relations have a `kind` that determines their role in the data model:
-
-| Aspect       | Composition                    | Trace                              |
-|--------------|--------------------------------|------------------------------------|
-| Purpose      | Defines tree hierarchy         | Defines horizontal traceability    |
-| Built-in     | `is_composed_of`               | `traces_to`                        |
-| Navigation   | parent / children / siblings   | left (incoming) / right (outgoing) |
-| Tree view    | Shown in composition tree      | Not shown in tree                  |
-| Ordering     | Uses `position` field          | No ordering                        |
-| Cardinality  | An item can have at most one composition parent | An item can have many trace relations |
-
-### Composition Relations
-
-Composition relations form a strict tree hierarchy. The built-in `is_composed_of` relation type is the default. Key properties:
-
-- An item's **parent** is the source of an incoming composition relation
-- An item's **children** are the targets of its outgoing composition relations
-- **Siblings** are other children of the same parent
-- Children are ordered by the `position` field and can be reordered via the `reorder-children` endpoint
-- Root items (those with no composition parent) are returned by the `roots` endpoint
-
-### Trace Relations
-
-Trace relations define horizontal traceability links between items. The built-in `traces_to` relation type is the default, but custom trace relation types can be created. Key properties:
-
-- **Left panel** in the navigator shows incoming trace relations (where the current item is the target)
-- **Right panel** shows outgoing trace relations (where the current item is the source)
-- Trace relations participate in suspect link tracking
-- Trace relations are followed by traceability matrix traversal columns
-
-### Built-in Relation Types
-
-Two relation types are created automatically for each vault and cannot be deleted:
-
-| Name             | Kind          | Forward Label   | Reverse Label    |
-|------------------|---------------|-----------------|------------------|
-| `is_composed_of` | `composition` | is composed of  | composed in      |
-| `traces_to`      | `trace`       | traces to       | traced by        |
-
-Custom relation types of either kind can be created to model additional relationships.
+# Data model and access boundaries
+
+[Documentation index](../../docs/README.md) · [API reference](api.md)
+
+## Core records
+
+| Record | Scope and purpose |
+| --- | --- |
+| `User` | Site-wide account; `is_site_admin`, `account_status`, `is_active`, and the account's `active_vault`. |
+| `SiteSettings` | Singleton for registration, mailbox limits, and optional AI configuration/credentials. |
+| `Vault` / `VaultMembership` | Workspace and per-user viewer/editor/admin membership. |
+| `ItemType` / `CustomFieldDefinition` | Vault-specific item schema and named custom fields. |
+| `Item` / `CustomFieldValue` | Current item state; its vault follows `item_type.vault`. Custom values are JSON values in separate rows. |
+| `ItemVersion` | Pre-update item snapshot and version number. |
+| `RelationType` / `ItemRelation` | Vault-specific directional relation definitions and links between items. |
+| `DocumentTemplate` | Markdown template for an item type. |
+| `Matrix` / `MatrixSource` / `MatrixDisplayColumn` | A standalone traceability table, its named data sources, and displayed columns. |
+| `MatrixAnnotation` / `ItemTableAnnotation` | Notes keyed by table/field, annotation source, and row hash. |
+| `MailboxArtifact` | A generated document owned by a user, with source-vault/item metadata. |
+| `Conversation` / `Message` / `PendingAction` | User-and-vault-scoped AI history and proposed changes. |
+| `VaultAuditLog` | Vault creation, member changes, and locking events. |
+
+Most content IDs are UUIDs; user IDs are integers. Timestamps use Django's
+configured UTC timezone. See the [model source](../apps/) and migrations for field
+constraints and exact defaults.
+
+## Permissions and roles
+
+Site administration is a global flag, separate from Django's `is_staff` and
+`is_superuser`. The standard Django `createsuperuser` command does not set the
+Verity flag; first-admin setup and `ensure_admin` do.
+
+| Access | Scope |
+| --- | --- |
+| Site admin | User/site configuration, vault creation/deletion, and content access in any selected vault. |
+| Vault admin | Member administration and audit access for the requested vault, lock/unlock, and content editing. |
+| Editor | Read/write access to content, schema, templates, and tables in an active member vault. |
+| Viewer | Content reads, personal document generation, and personal AI conversations; no content edits or action acceptance. |
+
+The normal content permission stack is `HasVaultAccess`, `ReadOnlyOrEditor`, and
+`VaultNotLocked`. Site admins bypass membership checks, but still select an active
+vault and obey content locking. Membership/audit endpoints authorize the vault ID
+in the URL, independently of which vault is currently active.
+
+`active_vault` is stored on the user, not in a JWT or tab session. Switching it
+affects future requests from every client using that account. Clients should clear
+vault-specific caches after switching. Most content endpoints obtain scope from
+this field; passing a different vault ID in the payload does not change it.
+
+The user directory is site-wide and readable by site admins or an admin in their
+active vault, to support selecting accounts for memberships. AI conversations and
+actions additionally require ownership. Mailbox queries are scoped to the user,
+not filtered to only their active vault; access still requires an active vault.
+
+## Locking and audit coverage
+
+A vault stores `is_locked`, `locked_at`, and `locked_by`. Locking blocks normal
+item/type/relation/table/template writes, member changes, and AI action acceptance,
+including for site admins. It does not block all database writes: mailbox
+operations, personal conversations, and action rejection use different permissions.
+Site-level administration is also separate.
+
+The audit log records `vault_created`, `member_added`, `member_removed`,
+`member_role_changed`, `vault_locked`, and `vault_unlocked`. It does not record
+every API request or every item edit. Item versions provide a separate history;
+there is no tamper-evident audit or electronic-signature mechanism.
+
+## Soft deletion and recovery
+
+Models derived from `SoftDeleteModel` store `is_deleted` and `deleted_at`.
+Their `objects` manager excludes deleted rows; `all_objects` includes them.
+Model deletion can invoke model-specific soft cascades, while queryset deletion
+and maintenance `hard_delete()` calls have different behavior.
+
+Examples from current model hooks:
+
+- Item deletion marks its custom values, item versions, relations, and embedded
+  table annotations deleted.
+- Type deletion marks its definitions/templates; the API refuses to delete a type
+  with live items.
+- Vault deletion marks the vault and memberships deleted. It does **not** recursively
+  erase all contained item data.
+- User removal through the account API sets `account_status=deleted` and
+  `is_active=False`; it does not use `SoftDeleteModel`.
+- `SiteSettings` and `VaultAuditLog` are ordinary Django models.
+
+Do not interpret soft deletion as guaranteed retention or recovery. Protected
+foreign keys, explicit hard-delete methods, and destructive maintenance commands
+also exist. There is no general public restore endpoint, and restoring a parent
+row is not automatically a complete cascade restore. Use tested database backups
+for operational recovery; see [Operations](../../docs/operations.md).
+
+## Versions, relations, and templates
+
+Items start at `current_version=1`. Updates through `ItemSerializer` snapshot the
+pre-update title, description, status, and custom values into `ItemVersion`, then
+increment the live version. The version-detail endpoint can synthesize the current
+version from live data. These snapshots are not immutable backups of every related
+schema/template/link, and there is no general optimistic-concurrency contract in
+the item API.
+
+An `ItemRelation` records `source_version` and `target_version` when created or
+confirmed. A link becomes suspect when a recorded endpoint version is behind the
+current item version. Confirming can select existing version numbers and set
+`version_pinned`. This records a reference decision; it does not approve item
+content automatically.
+
+Composition relations use `position` to order parent→child links. Trace relations
+provide source→target navigation and table traversal. The UI expects an acyclic
+composition tree with one parent per item, but the API does not enforce that full
+invariant for every operation. Keep the data tree-shaped when using the tree and
+document editors; traversal code uses visited sets/depth bounds where implemented.
+
+New vaults automatically receive:
+
+| Name | Kind | Forward label | Reverse label |
+| --- | --- | --- | --- |
+| `is_composed_of` | `composition` | is composed of | is part of |
+| `traces_to` | `trace` | traces to | is traced from |
+
+Built-in relation types cannot be deleted through the relation-type endpoint.
+Labels and existing imported data can differ. `seed_data` ensures these types in
+existing vaults; it does not create a first user or first vault.
+
+Templates substitute `{{placeholder}}` values into Markdown and default to a
+built-in layout when no custom template is configured. Generated mailbox documents
+are snapshots, not live views. The generator's current depth range is 1–6.
+
+## Tables and AI data
+
+Standalone tables keep source definitions separate from display columns. Sources
+can seed, traverse, calculate, annotate, or select a custom field. A display column
+references a source by name. Embedded table fields have an implicit seed (the
+owning item) and a distinct `options.columns` schema. Changing traversal identities
+can change row hashes, so old annotations may no longer appear on newly shaped rows.
+
+AI conversation/message data and provider keys live in PostgreSQL. Accepted actions
+use the normal content serializers, require the conversation owner to have edit
+access, and are resolved under a database lock to prevent duplicate acceptance.
+A failed action rolls back its content changes and records a failed status.

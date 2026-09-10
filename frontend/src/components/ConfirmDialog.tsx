@@ -13,6 +13,8 @@ type ConfirmFn = (options: ConfirmOptions | string) => Promise<boolean>;
 
 const ConfirmContext = createContext<ConfirmFn | null>(null);
 
+// Consumer hook shares the component module; edits may trigger a full reload.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConfirm(): ConfirmFn {
   const fn = useContext(ConfirmContext);
   if (!fn) throw new Error("useConfirm must be used within ConfirmProvider");

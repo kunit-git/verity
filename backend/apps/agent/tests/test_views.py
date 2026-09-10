@@ -20,6 +20,14 @@ class TestAgentStatus:
 
 
 class TestConversationCRUD:
+    def test_chat_on_other_users_conversation_returns_404(self, viewer_client, conversation):
+        response = viewer_client.post(
+            f"/api/v1/agent/conversations/{conversation.id}/chat/",
+            {"message": "Hello"}, format="json",
+        )
+        assert response.status_code == 404
+        assert not conversation.messages.exists()
+
     def test_create_conversation(self, editor_client, vault):
         r = editor_client.post("/api/v1/agent/conversations/", {"title": "Test Chat"}, format="json")
         assert r.status_code == 201
@@ -62,6 +70,67 @@ class TestConversationCRUD:
 
 
 class TestPendingActionAcceptReject:
+    @pytest.mark.django_db(transaction=True)
+    def test_concurrent_accept_executes_once(self, editor_user, pending_action):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from django.contrib.auth import get_user_model
+        from django.db import close_old_connections
+        from rest_framework.test import APIClient
+        from apps.items.models import Item
+
+        barrier = Barrier(2)
+
+        def accept(_):
+            close_old_connections()
+            try:
+                client = APIClient()
+                client.force_authenticate(get_user_model().objects.get(pk=editor_user.pk))
+                barrier.wait(timeout=10)
+                return client.post(
+                    f"/api/v1/agent/pending-actions/{pending_action.pk}/accept/"
+                ).status_code
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            statuses = list(pool.map(accept, range(2)))
+        assert sorted(statuses) == [200, 400]
+        assert Item.objects.filter(title=pending_action.payload["title"]).count() == 1
+
+    @pytest.mark.parametrize("operation", ["accept", "reject"])
+    def test_other_editor_cannot_resolve_action(self, viewer_client, viewer_user, pending_action, operation):
+        from apps.vaults.models import VaultMembership
+
+        VaultMembership.objects.filter(user=viewer_user).update(role="editor")
+        response = viewer_client.post(
+            f"/api/v1/agent/pending-actions/{pending_action.id}/{operation}/"
+        )
+        assert response.status_code == 404
+        pending_action.refresh_from_db()
+        assert pending_action.status == "pending"
+
+    @pytest.mark.parametrize("operation", ["accept", "reject"])
+    def test_missing_action_returns_404(self, editor_client, operation):
+        from uuid import uuid4
+
+        response = editor_client.post(f"/api/v1/agent/pending-actions/{uuid4()}/{operation}/")
+        assert response.status_code == 404
+
+    def test_failed_action_rolls_back_partial_writes(self, editor_client, pending_action, item_type, monkeypatch):
+        from apps.agent import views
+        from apps.items.models import Item
+
+        def fail_after_write(action, request):
+            ItemFactory(item_type=item_type, title="Should roll back")
+            raise ValueError("Test failure after writing")
+
+        monkeypatch.setattr(views, "_execute_pending_action", fail_after_write)
+        response = editor_client.post(f"/api/v1/agent/pending-actions/{pending_action.id}/accept/")
+        assert response.status_code == 200
+        assert response.data["status"] == "failed"
+        assert not Item.objects.filter(title="Should roll back").exists()
+
     @pytest.fixture
     def pending_action(self, conversation, item_type):
         msg = Message.objects.create(

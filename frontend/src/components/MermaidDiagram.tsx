@@ -61,12 +61,14 @@ export default function MermaidDiagram({ source }: Props) {
   useEffect(() => {
     if (!source.trim()) return;
     let cancelled = false;
-    setError(null);
     mermaid.initialize(MERMAID_CONFIG);
     mermaid
       .render(`mermaid-${id}`, source)
       .then(({ svg }) => {
-        if (!cancelled && ref.current) ref.current.innerHTML = svg;
+        if (!cancelled && ref.current) {
+          ref.current.innerHTML = svg;
+          setError(null);
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
